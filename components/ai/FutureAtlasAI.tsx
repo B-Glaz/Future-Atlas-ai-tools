@@ -8,6 +8,7 @@ import {
   readAIClientCache,
   writeAIClientCache,
 } from "@/lib/ai/client-cache";
+import { requestAI } from "@/lib/ai/request";
 import {
   ArrowRight,
   Bot,
@@ -154,6 +155,7 @@ export default function FutureAtlasAI({
   }, [storageKey]);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const [showAllToolModes, setShowAllToolModes] = useState(false);
 
@@ -167,6 +169,25 @@ export default function FutureAtlasAI({
       block: "end",
     });
   }, [messages, isThinking]);
+
+  const loadingMessages = [
+    `Understanding your ${config.label.toLowerCase()} request...`,
+    "Exploring the most relevant information...",
+    "Comparing options for your goals...",
+    "Almost there...",
+  ];
+
+  useEffect(() => {
+    if (!isThinking) return;
+
+    const intervalId = window.setInterval(() => {
+      setLoadingMessageIndex((current) =>
+        (current + 1) % loadingMessages.length
+      );
+    }, 1800);
+
+    return () => window.clearInterval(intervalId);
+  }, [isThinking, loadingMessages.length]);
 
   const sendMessage = async (text?: string) => {
     const message = (text ?? input).trim();
@@ -190,6 +211,7 @@ export default function FutureAtlasAI({
     ]);
 
     setInput("");
+    setLoadingMessageIndex(0);
     setIsThinking(true);
 
     try {
@@ -225,23 +247,10 @@ export default function FutureAtlasAI({
         return;
       }
 
-      const response = await fetch("/api/ai", {
-        method: "POST",
+      const data = await requestAI<{ response?: string }>(requestBody);
 
-        headers: {
-          "Content-Type": "application/json",
-        },
-
-        body: JSON.stringify(requestBody),
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            "Something went wrong."
-        );
+      if (!data.response?.trim()) {
+        throw new Error("The AI returned an empty response. Please try again.");
       }
 
       const assistantMessageId = nextMessageIdRef.current;
@@ -545,7 +554,7 @@ export default function FutureAtlasAI({
                   className="animate-spin"
                 />
 
-                Thinking...
+                <span>{loadingMessages[loadingMessageIndex]}</span>
 
               </div>
             </div>

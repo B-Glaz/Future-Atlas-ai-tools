@@ -25,7 +25,10 @@ import {
   writeAIClientCache,
   clearAIClientCache,
 } from "@/lib/ai/client-cache";
+import { requestAI } from "@/lib/ai/request";
 import { getProgressiveOptions, MORE_OPTION } from "@/lib/progressive-options";
+import ForumCTA from "@/components/ForumCTA";
+import ResultLoading from "@/components/ai/ResultLoading";
 
 type BudgetStatus = {
   label: string;
@@ -223,24 +226,14 @@ export default function CostCalculator() {
       const aiEstimate =
         cachedData ??
         (await (async () => {
-      const response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const aiData = await requestAI<{ data?: Partial<CostData> }>(requestBody);
 
-      const aiData = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          aiData.error || "Unable to generate cost estimate."
-        );
+      if (!aiData.data || typeof aiData.data !== "object") {
+        throw new Error("The AI returned an incomplete cost estimate. Please try again.");
       }
 
           writeAIClientCache(cacheKey, aiData.data);
-          return aiData.data as Partial<CostData>;
+          return aiData.data;
         })());
 
       setResult({
@@ -386,6 +379,9 @@ export default function CostCalculator() {
     </div>
   </div>
 </div>
+        <div className="mt-6 overflow-hidden rounded-3xl border border-violet-100">
+          <ForumCTA context="cost" />
+        </div>
         <p className="mt-4 text-center text-[10px] font-medium text-slate-400">
           Powered by One Window
         </p>
@@ -514,7 +510,9 @@ export default function CostCalculator() {
       </div>
 
       <p className="mt-6 text-center text-[10px] leading-5 text-slate-400">
-        {error ||
+        {isLoading ? (
+          <ResultLoading messages={["Understanding your budget...", "Comparing study costs...", "Preparing your estimate..."]} />
+        ) : error ||
           "Estimates are indicative only. Actual costs vary by university, location, lifestyle, exchange rates, and individual circumstances."}
       </p>
 

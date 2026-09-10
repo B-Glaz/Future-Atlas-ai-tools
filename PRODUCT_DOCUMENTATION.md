@@ -27,7 +27,7 @@ The interface is intentionally minimal, fast, and mobile-first. Students answer 
 | **Frontend framework** | Next.js 16 (App Router), React 19, TypeScript |
 | **Styling** | Tailwind CSS v4, shadcn/ui (base-nova), Lucide icons |
 | **Animation** | Framer Motion |
-| **AI provider** | Groq (Llama 3.3 70B) via serverless API route |
+| **AI provider** | NVIDIA API (Nemotron 3.5 Lightning 30B-A3B) via serverless API route |
 | **AI features** | Structured JSON output, client-side caching, conversation history |
 | **Deployment** | Node.js server (`next start`), runs on port 3000/3001 |
 | **Security headers** | CSP `frame-ancestors` (configurable via `EMBED_ALLOWED_ORIGINS`), `X-Frame-Options: SAMEORIGIN` on protected routes |
@@ -133,7 +133,7 @@ Returns: Score (0–98), status label, summary, 3-category breakdown (Academic /
 - Client-side response caching (24hr TTL, 250-entry LRU)
 - Disclaimer: "Future Atlas AI can make mistakes. Always verify... Powered by One Window"
 
-**Technical:** Calls `/api/ai` (POST) with mode, message, history, optional structured inputs. Groq Llama 3.3 70B with JSON schema enforcement for structured modes.
+**Technical:** Calls `/api/ai` (POST) with mode, message, history, optional structured inputs. NVIDIA Nemotron 3.5 Lightning 30B-A3B with JSON schema enforcement for structured modes.
 
 ---
 
@@ -189,14 +189,14 @@ Lead capture / partner handoff page. (Implementation not reviewed — route exis
 
 | Aspect | Detail |
 |--------|--------|
-| **Model** | Llama 3.3 70B (Groq) |
+| **Model** | NVIDIA Nemotron 3.5 Lightning 30B-A3B |
 | **Temperature** | 0.7 |
 | **Structured modes** | Enforced JSON schema via `response_format: json_object` |
 | **System prompts** | Defined in `/lib/ai/personalities.ts` — role, tone, scope |
 | **Routing instructions** | Injected into every request — keeps AI focused on 5 tools |
 | **Scope filter** | Mentor mode rejects non-study-abroad topics (celebrity, crypto, politics, etc.) |
 | **Caching** | Client-side (localStorage, 24hr) + server in-memory (24hr, 250 entries) |
-| **Deduplication** | Pending request map prevents duplicate Groq calls |
+| **Deduplication** | Pending request map prevents duplicate NVIDIA calls |
 | **Rate limit handling** | Returns 429 with friendly message |
 | **Error handling** | Graceful fallback: "I couldn't connect to the AI right now" |
 | **Disclaimer** | Shown in every AI response footer |
@@ -226,7 +226,7 @@ Lead capture / partner handoff page. (Implementation not reviewed — route exis
 
 | Variable | Purpose | Required |
 |----------|---------|----------|
-| `GROQ_API_KEY` | AI provider authentication | Yes |
+| `NVIDIA_API_KEY` | AI provider authentication | Yes |
 | `EMBED_ALLOWED_ORIGINS` | Comma-separated list of origins allowed to iframe `/embed` | For embed |
 | `NEXT_PUBLIC_*` | None currently used | No |
 

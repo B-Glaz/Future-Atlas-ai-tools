@@ -21,7 +21,10 @@ import {
   writeAIClientCache,
   clearAIClientCache,
 } from "@/lib/ai/client-cache";
+import { requestAI } from "@/lib/ai/request";
 import { getProgressiveOptions, MORE_OPTION } from "@/lib/progressive-options";
+import ForumCTA from "@/components/ForumCTA";
+import ResultLoading from "@/components/ai/ResultLoading";
 
 const studyOptions = [
   "Computer Science & AI",
@@ -212,18 +215,10 @@ export default function EligibilityChecker() {
         return;
       }
 
-      const response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const payload = await requestAI<{ data?: EligibilityResult }>(requestBody);
 
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Unable to generate assessment.");
+      if (!payload.data || typeof payload.data !== "object") {
+        throw new Error("The AI returned an incomplete assessment. Please try again.");
       }
 
       writeAIClientCache(cacheKey, payload.data);
@@ -689,11 +684,12 @@ export default function EligibilityChecker() {
               {/* Disclaimer */}
               <p className="mt-6 text-center text-xs leading-5 text-slate-400">
                 {isLoading
-                  ? "Personalizing your assessment..."
+                  ? <ResultLoading messages={["Reviewing your profile...", "Checking programme fit...", "Preparing your assessment..."]} />
                   : error ||
                     "This tool provides an initial estimate based on the information you provide. It does not guarantee admission or visa approval. Requirements vary by university, programme, country, and applicant circumstances. Always verify requirements with official sources."}
               </p>
             </div>
+            {!isLoading && result && <ForumCTA context="eligibility" />}
           </>
         )}
       </div>

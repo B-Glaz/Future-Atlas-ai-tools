@@ -19,7 +19,10 @@ import {
   writeAIClientCache,
   clearAIClientCache,
 } from "@/lib/ai/client-cache";
+import { requestAI } from "@/lib/ai/request";
 import { getProgressiveOptions, MORE_OPTION } from "@/lib/progressive-options";
+import ForumCTA from "@/components/ForumCTA";
+import ResultLoading from "@/components/ai/ResultLoading";
 
 const studyOptions = [
   "Computer Science",
@@ -167,24 +170,16 @@ export default function CountryExplorer() {
         return;
       }
 
-      const response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const payload = await requestAI<{
+        data?: { countries?: CountryMatch[] };
+      }>(requestBody);
 
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Unable to generate matches.");
+      if (!Array.isArray(payload.data?.countries) || !payload.data.countries.length) {
+        throw new Error("The AI returned no country matches. Please try again.");
       }
 
-      if (Array.isArray(payload.data?.countries)) {
-        writeAIClientCache(cacheKey, payload.data);
-        setResults(payload.data.countries);
-      }
+      writeAIClientCache(cacheKey, payload.data);
+      setResults(payload.data.countries);
     } catch (error) {
       console.error("Country AI error:", error);
       setError(
@@ -494,7 +489,7 @@ export default function CountryExplorer() {
             {(isLoading || error || !results?.length) && (
               <div className="px-6 pb-6 text-center text-xs text-slate-400 sm:px-10">
                 {isLoading
-                  ? "Personalizing your matches..."
+                  ? <ResultLoading messages={["Understanding your priorities...", "Comparing destinations...", "Preparing your best matches..."]} />
                   : error || "Your AI matches will appear here."}
               </div>
             )}
@@ -507,6 +502,7 @@ export default function CountryExplorer() {
                 </p>
               </div>
             </div>
+            {!isLoading && Boolean(results?.length) && <ForumCTA context="country" />}
           </>
         )}
       </div>
