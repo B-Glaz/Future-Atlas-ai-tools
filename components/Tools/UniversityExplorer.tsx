@@ -64,45 +64,14 @@ type UniversityMatch = {
   type: string;
   highlights: string[];
 };
-type UniversityExplorerState = {
-  step: number;
-  study: string;
-  country: string;
-  budget: string;
-  customAnswers: Record<string, string>;
-  showResults: boolean;
-  results: UniversityMatch[] | null;
-};
-
-const storageKey = "future-atlas-university-explorer";
-
-function getInitialState(): UniversityExplorerState {
-  return {
-    step: 1,
-    study: "",
-    country: "",
-    budget: "",
-    customAnswers: {},
-    showResults: false,
-    results: null,
-  };
-}
-
 export default function UniversityExplorer() {
-  const [initialState] = useState(getInitialState);
-  const [step, setStep] = useState(initialState.step || 1);
-  const [study, setStudy] = useState(initialState.study || "");
-  const [country, setCountry] = useState(initialState.country || "");
-  const [budget, setBudget] = useState(initialState.budget || "");
-  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>(
-    initialState.customAnswers || {}
-  );
-  const [showResults, setShowResults] = useState(
-    Boolean(initialState.showResults)
-  );
-  const [results, setResults] = useState<UniversityMatch[] | null>(
-    initialState.results || null
-  );
+  const [step, setStep] = useState(1);
+  const [study, setStudy] = useState("");
+  const [country, setCountry] = useState("");
+  const [budget, setBudget] = useState("");
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
+  const [showResults, setShowResults] = useState(false);
+  const [results, setResults] = useState<UniversityMatch[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showAllOptions, setShowAllOptions] = useState(false);
@@ -116,7 +85,6 @@ export default function UniversityExplorer() {
     setResults(null);
     setError("");
     setIsLoading(false);
-    localStorage.removeItem(storageKey);
     clearAIClientCache();
   };
   const selectOption = (value: string) => {

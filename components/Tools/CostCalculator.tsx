@@ -52,24 +52,6 @@ type CostData = {
 aiAnalysis?: string;
 };
 
-type CostCalculatorState = {
-  step: number;
-  answers: Record<string, string>;
-  customAnswers: Record<string, string>;
-  result: CostData | null;
-};
-
-const storageKey = "future-atlas-cost-calculator";
-
-function getInitialState(): CostCalculatorState {
-  return {
-    step: 0,
-    answers: {},
-    customAnswers: {},
-    result: null,
-  };
-}
-
 const questions = [
   {
     id: "country",
@@ -147,19 +129,10 @@ const questions = [
 ];
 
 export default function CostCalculator() {
-  const [initialState] = useState(getInitialState);
-  const [step, setStep] = useState(initialState.step || 0);
-
-  const [answers, setAnswers] = useState<Record<string, string>>(
-    initialState.answers || {}
-  );
-  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>(
-    initialState.customAnswers || {}
-  );
-
-  const [result, setResult] = useState<CostData | null>(
-    initialState.result || null
-  );
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
+  const [result, setResult] = useState<CostData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showAllOptions, setShowAllOptions] = useState(false);
@@ -170,7 +143,6 @@ export default function CostCalculator() {
     setResult(null);
     setError("");
     setIsLoading(false);
-    localStorage.removeItem(storageKey);
     clearAIClientCache();
   };
   const currentQuestion = questions[step];

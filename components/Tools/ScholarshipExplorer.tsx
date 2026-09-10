@@ -65,47 +65,14 @@ type ScholarshipMatch = {
   type: string;
   tags: string[];
 };
-type ScholarshipExplorerState = {
-  step: number;
-  country: string;
-  study: string;
-  academic: string;
-  customAnswers: Record<string, string>;
-  showResults: boolean;
-  results: ScholarshipMatch[] | null;
-};
-
-const storageKey = "future-atlas-scholarship-explorer";
-
-function getInitialState(): ScholarshipExplorerState {
-  return {
-    step: 1,
-    country: "",
-    study: "",
-    academic: "",
-    customAnswers: {},
-    showResults: false,
-    results: null,
-  };
-}
-
 export default function ScholarshipExplorer() {
-  const [initialState] = useState(getInitialState);
-  const [step, setStep] = useState(initialState.step || 1);
-  const [country, setCountry] = useState(initialState.country || "");
-  const [study, setStudy] = useState(initialState.study || "");
-  const [academic, setAcademic] = useState(
-    initialState.academic || ""
-  );
-  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>(
-    initialState.customAnswers || {}
-  );
-  const [showResults, setShowResults] = useState(
-    Boolean(initialState.showResults)
-  );
-  const [results, setResults] = useState<ScholarshipMatch[] | null>(
-    initialState.results || null
-  );
+  const [step, setStep] = useState(1);
+  const [country, setCountry] = useState("");
+  const [study, setStudy] = useState("");
+  const [academic, setAcademic] = useState("");
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
+  const [showResults, setShowResults] = useState(false);
+  const [results, setResults] = useState<ScholarshipMatch[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showAllOptions, setShowAllOptions] = useState(false);
@@ -119,7 +86,6 @@ export default function ScholarshipExplorer() {
     setResults(null);
     setError("");
     setIsLoading(false);
-    localStorage.removeItem(storageKey);
     clearAIClientCache();
   };
   const selectOption = (value: string) => {

@@ -85,55 +85,16 @@ type EligibilityResult = {
   nextSteps: string[];
 };
 
-type EligibilityState = {
-  step: number;
-  study: string;
-  country: string;
-  academic: string;
-  english: string;
-  level: string;
-  customAnswers: Record<string, string>;
-  showResults: boolean;
-  result: EligibilityResult | null;
-};
-
-const storageKey = "future-atlas-eligibility-checker";
-
-function getInitialState(): EligibilityState {
-  return {
-    step: 1,
-    study: "",
-    country: "",
-    academic: "",
-    english: "",
-    level: "",
-    customAnswers: {},
-    showResults: false,
-    result: null,
-  };
-}
-
 export default function EligibilityChecker() {
-  const [initialState] = useState(getInitialState);
-  const [step, setStep] = useState(initialState.step || 1);
-
-  const [study, setStudy] = useState(initialState.study || "");
-  const [country, setCountry] = useState(initialState.country || "");
-  const [academic, setAcademic] = useState(
-    initialState.academic || ""
-  );
-  const [english, setEnglish] = useState(initialState.english || "");
-  const [level, setLevel] = useState(initialState.level || "");
-  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>(
-    initialState.customAnswers || {}
-  );
-
-  const [showResults, setShowResults] = useState(
-    Boolean(initialState.showResults)
-  );
-  const [result, setResult] = useState<EligibilityResult | null>(
-    initialState.result || null
-  );
+  const [step, setStep] = useState(1);
+  const [study, setStudy] = useState("");
+  const [country, setCountry] = useState("");
+  const [academic, setAcademic] = useState("");
+  const [english, setEnglish] = useState("");
+  const [level, setLevel] = useState("");
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
+  const [showResults, setShowResults] = useState(false);
+  const [result, setResult] = useState<EligibilityResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showAllOptions, setShowAllOptions] = useState(false);
@@ -149,7 +110,6 @@ export default function EligibilityChecker() {
     setResult(null);
     setError("");
     setIsLoading(false);
-    localStorage.removeItem(storageKey);
     clearAIClientCache();
   };
   const selectOption = (value: string) => {

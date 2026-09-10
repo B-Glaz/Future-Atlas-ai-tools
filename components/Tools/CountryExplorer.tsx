@@ -58,45 +58,14 @@ type CountryMatch = {
   tags: string[];
 };
 
-type CountryExplorerState = {
-  step: number;
-  study: string;
-  budget: string;
-  priority: string;
-  customAnswers: Record<string, string>;
-  showResults: boolean;
-  results: CountryMatch[] | null;
-};
-
-const storageKey = "future-atlas-country-explorer";
-
-function getInitialState(): CountryExplorerState {
-  return {
-    step: 1,
-    study: "",
-    budget: "",
-    priority: "",
-    customAnswers: {},
-    showResults: false,
-    results: null,
-  };
-}
-
 export default function CountryExplorer() {
-  const [initialState] = useState(getInitialState);
-  const [step, setStep] = useState(initialState.step || 1);
-  const [study, setStudy] = useState(initialState.study || "");
-  const [budget, setBudget] = useState(initialState.budget || "");
-  const [priority, setPriority] = useState(initialState.priority || "");
-  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>(
-    initialState.customAnswers || {}
-  );
-  const [showResults, setShowResults] = useState(
-    Boolean(initialState.showResults)
-  );
-  const [results, setResults] = useState<CountryMatch[] | null>(
-    initialState.results || null
-  );
+  const [step, setStep] = useState(1);
+  const [study, setStudy] = useState("");
+  const [budget, setBudget] = useState("");
+  const [priority, setPriority] = useState("");
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
+  const [showResults, setShowResults] = useState(false);
+  const [results, setResults] = useState<CountryMatch[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showAllOptions, setShowAllOptions] = useState(false);
@@ -110,7 +79,6 @@ export default function CountryExplorer() {
     setResults(null);
     setError("");
     setIsLoading(false);
-    localStorage.removeItem(storageKey);
     clearAIClientCache();
   };
   const selectOption = (value: string) => {
