@@ -14,15 +14,25 @@ type AIRequestOptions = {
 
 export async function requestAI<T>(
   body: Record<string, unknown>,
-  { timeoutMs = 35_000 }: AIRequestOptions = {}
+  { timeoutMs = 55_000 }: AIRequestOptions = {}
 ): Promise<T> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const { supabase } = await import("@/lib/supabase");
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      throw new AIRequestError("Sign in to use Future Atlas AI.");
+    }
+
     const response = await fetch("/api/ai", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
       body: JSON.stringify(body),
       signal: controller.signal,
     });

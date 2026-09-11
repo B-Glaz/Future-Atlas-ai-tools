@@ -642,12 +642,12 @@ export default function EligibilityChecker() {
               </div>
 
               {/* Disclaimer */}
-              <p className="mt-6 text-center text-xs leading-5 text-slate-400">
+              <div className="mt-6 text-center text-xs leading-5 text-slate-400">
                 {isLoading
                   ? <ResultLoading messages={["Reviewing your profile...", "Checking programme fit...", "Preparing your assessment..."]} />
                   : error ||
                     "This tool provides an initial estimate based on the information you provide. It does not guarantee admission or visa approval. Requirements vary by university, programme, country, and applicant circumstances. Always verify requirements with official sources."}
-              </p>
+              </div>
             </div>
             {!isLoading && result && <ForumCTA context="eligibility" />}
           </>

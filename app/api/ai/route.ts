@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
-
 import { personalities } from "@/lib/ai/personalities";
+import { consumeCredit, CreditError } from "@/lib/ai/credits";
+import { requestAI } from "@/lib/ai/providers";
 import type { AIMode } from "@/lib/ai/types";
-import { createStructuredFallback } from "@/lib/ai/fallbacks";
 
 export const dynamic = "force-dynamic";
 
@@ -20,17 +19,10 @@ const MAX_CACHE_ENTRIES = 250;
 const MAX_HISTORY_MESSAGES = 6;
 const MAX_HISTORY_CHARS = 8000;
 
-// Model
-const NVIDIA_MODEL =
-  process.env.NVIDIA_MODEL?.trim() || "openai/gpt-oss-20b";
-
 // Fast-response token limits.
 // These are deliberately much smaller than your previous 1200.
-const STRUCTURED_MAX_TOKENS = 1600;
-const NORMAL_MAX_TOKENS = 600;
-const RATE_LIMIT_WINDOW_MS = 1000 * 60 * 60 * 24;
-const REQUESTS_PER_CYCLE = 5;
-const MAX_COOLDOWN_SECONDS = 120;
+const STRUCTURED_MAX_TOKENS = 700;
+const NORMAL_MAX_TOKENS = 900;
 
 // ============================================================
 // CONSTANTS
@@ -47,7 +39,6 @@ type CachedAIResponse = {
 type GlobalAIState = {
   aiResponseCache?: Map<string, CachedAIResponse>;
   pendingAIResponses?: Map<string, Promise<string>>;
-  aiUsage?: Map<string, { startedAt: number; requests: number; cooldownUntil: number }>;
 };
 
 const globalAIState = globalThis as typeof globalThis & GlobalAIState;
@@ -59,51 +50,9 @@ const responseCache =
 const pendingResponses =
   globalAIState.pendingAIResponses ??
   new Map<string, Promise<string>>();
-const usageByClient =
-  globalAIState.aiUsage ??
-  new Map<string, { startedAt: number; requests: number; cooldownUntil: number }>();
 
 globalAIState.aiResponseCache = responseCache;
 globalAIState.pendingAIResponses = pendingResponses;
-globalAIState.aiUsage = usageByClient;
-
-function getClientKey(request: NextRequest) {
-  return (
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    "unknown-client"
-  );
-}
-
-function consumeUsage(request: NextRequest) {
-  const now = Date.now();
-  const clientKey = getClientKey(request);
-  const current = usageByClient.get(clientKey);
-  const usage =
-    !current || now - current.startedAt >= RATE_LIMIT_WINDOW_MS
-      ? { startedAt: now, requests: 0, cooldownUntil: 0 }
-      : current;
-
-  if (usage.cooldownUntil > now) {
-    return {
-      allowed: false,
-      retryAfterSeconds: Math.ceil((usage.cooldownUntil - now) / 1000),
-    };
-  }
-
-  usage.requests += 1;
-  usageByClient.set(clientKey, usage);
-
-  if (usage.requests % REQUESTS_PER_CYCLE === 0) {
-    const cooldownSeconds = Math.min(
-      (usage.requests / REQUESTS_PER_CYCLE) * 10,
-      MAX_COOLDOWN_SECONDS
-    );
-    usage.cooldownUntil = now + cooldownSeconds * 1000;
-  }
-
-  return { allowed: true, retryAfterSeconds: 0 };
-}
 
 // ============================================================
 // ROUTING INSTRUCTIONS
@@ -219,7 +168,7 @@ Return JSON only with this exact shape:
 Rules:
 - Create exactly 3 countries.
 - Scores must be integers from 70 to 98.
-- Keep descriptions concise.
+- Give each description two useful sentences: why it fits and one tradeoff.
 - Do not invent exact visa rules, tuition fees, rankings, deadlines,
   or other specific facts unless supplied or clearly known.
 - If a fact is uncertain, use cautious wording.
@@ -235,7 +184,7 @@ Return JSON only with this exact shape:
       "shortName": "Short label",
       "country": "Country",
       "location": "City, Country",
-      "ranking": "#1",
+      "ranking": "Current ranking must be verified",
       "tuition": "Approximate tuition range or cost level",
       "match": 92,
       "type": "University type",
@@ -314,7 +263,7 @@ Rules:
 - Use status values "positive" or "caution".
 - Never guarantee admission.
 - Never guarantee visa approval.
-- Keep the assessment concise.
+- Keep the assessment clear, specific, and tied to every supplied input.
 - Base the assessment on supplied user information.
 `,
 
@@ -341,7 +290,7 @@ Rules:
 - Use approximate ranges.
 - Explain assumptions when exact costs are unavailable.
 - Do not invent precise costs.
-- Keep the analysis concise.
+- Give a useful breakdown of assumptions, affordability, and cost-saving priorities.
 `,
 };
 
@@ -453,13 +402,6 @@ function writeCachedResponse(
     responseCache.delete(oldestKey);
   }
 }
-
-function cacheStructuredFallback(cacheKey: string, mode: AIMode, inputs: unknown) {
-  const data = createStructuredFallback(mode, inputs);
-  writeCachedResponse(cacheKey, JSON.stringify(data));
-  return data;
-}
-
 // ============================================================
 // HISTORY
 // ============================================================
@@ -553,6 +495,12 @@ export async function POST(
   const requestStartedAt = Date.now();
 
   try {
+    const contentLength = Number(request.headers.get("content-length") || 0);
+
+    if (contentLength > 64_000) {
+      return NextResponse.json({ error: "Request is too large." }, { status: 413 });
+    }
+
     // --------------------------------------------------------
     // Read request
     // --------------------------------------------------------
@@ -560,7 +508,7 @@ export async function POST(
     const body = await request.json();
 
     const mode = body.mode as AIMode;
-    const message = body.message as string;
+    const message = body.message;
     const inputs = body.inputs;
 
     const responseFormat =
@@ -574,10 +522,15 @@ export async function POST(
     // Validate
     // --------------------------------------------------------
 
-    if (!mode || !message?.trim()) {
+    if (
+      !mode ||
+      typeof message !== "string" ||
+      !message.trim() ||
+      message.length > 8_000
+    ) {
       return NextResponse.json(
         {
-          error: "Mode and message are required.",
+          error: "A valid message under 8,000 characters is required.",
         },
         { status: 400 }
       );
@@ -612,55 +565,11 @@ export async function POST(
       });
     }
 
-    const usage = consumeUsage(request);
-
-    if (!usage.allowed) {
-      return NextResponse.json(
-        {
-          error: `Please wait ${usage.retryAfterSeconds} seconds before sending another AI request.`,
-          retryAfterSeconds: usage.retryAfterSeconds,
-        },
-        {
-          status: 429,
-          headers: {
-            "Retry-After": String(usage.retryAfterSeconds),
-          },
-        }
-      );
-    }
+    const credit = await consumeCredit(request, mode);
 
     // --------------------------------------------------------
-    // NVIDIA API key
+    // Provider credentials are read only inside the request-time router.
     // --------------------------------------------------------
-
-    const apiKey =
-      process.env.NVIDIA_API_KEY?.trim();
-
-    if (!apiKey) {
-      console.error(
-        "NVIDIA_API_KEY is unavailable in the request runtime."
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Future Atlas AI is temporarily unavailable because its server configuration is incomplete. Please try again later.",
-        },
-        { status: 500 }
-      );
-    }
-
-    // --------------------------------------------------------
-    // NVIDIA client
-    // --------------------------------------------------------
-
-    const nvidia = new OpenAI({
-      apiKey,
-      baseURL:
-        "https://integrate.api.nvidia.com/v1",
-      timeout: 10_000,
-      maxRetries: 0,
-    });
 
     // --------------------------------------------------------
     // History
@@ -693,11 +602,19 @@ export async function POST(
         {
           role: "system" as const,
           content: `
-${personality.systemPrompt}
-
 ${routingInstructions}
 
 ${structuredPrompts[mode]}
+
+Current date: ${new Date().toISOString().slice(0, 10)}.
+Use every supplied input when ranking and explaining results.
+Do not claim information is current unless it is present in supplied data.
+Treat every user-provided value as authoritative. Never change, round, replace,
+or contradict supplied scores, budgets, countries, courses, dates, or study levels.
+Make recommendations materially depend on every supplied input.
+For each recommendation, explain the fit and one relevant limitation or tradeoff.
+For deadlines, visa rules, rankings, fees, and admission thresholds, avoid precise
+claims unless supplied. State what the student should verify on the official source.
 
 IMPORTANT:
 - Return valid JSON only.
@@ -729,7 +646,13 @@ ${personality.systemPrompt}
 
 ${routingInstructions}
 
-Answer concisely.
+Answer directly and tailor every point to the student's exact question.
+Use short sections or numbered steps when they improve clarity.
+Give practical next actions and explain why they matter.
+Repeat supplied scores, budgets, dates, courses, and destinations exactly.
+Never substitute a different value or infer a missing value.
+For time-sensitive requirements, explain what must be checked on the relevant
+official government or university source. Never pretend you performed a live search.
 Do not invent facts.
 If you do not have enough information, say so.
 `,
@@ -747,7 +670,7 @@ If you do not have enough information, say so.
     // --------------------------------------------------------
 
     const cacheKey = getCacheKey({
-      model: NVIDIA_MODEL,
+      providerRoutingVersion: 1,
       mode,
       responseFormat,
       messages,
@@ -775,23 +698,16 @@ If you do not have enough information, say so.
           });
         } catch {
           responseCache.delete(cacheKey);
-          console.warn(`[AI] USING FALLBACK | invalid cached JSON | mode=${mode}`);
-          return NextResponse.json({
-            data: cacheStructuredFallback(cacheKey, mode, inputs),
-            mode,
-            personality: personality.name,
-            cached: false,
-            fallback: true,
-          });
+          console.warn(`[AI] INVALID CACHED JSON | mode=${mode}`);
         }
+      } else {
+        return NextResponse.json({
+          response: cachedResponse,
+          mode,
+          personality: personality.name,
+          cached: true,
+        });
       }
-
-      return NextResponse.json({
-        response: cachedResponse,
-        mode,
-        personality: personality.name,
-        cached: true,
-      });
     }
 
     // --------------------------------------------------------
@@ -823,13 +739,8 @@ If you do not have enough information, say so.
             cached: true,
           });
         } catch {
-          return NextResponse.json({
-            data: cacheStructuredFallback(cacheKey, mode, inputs),
-            mode,
-            personality: personality.name,
-            cached: false,
-            fallback: true,
-          });
+          responseCache.delete(cacheKey);
+          return NextResponse.json({ error: "The live AI returned an invalid response. Please try again." }, { status: 502 });
         }
       }
 
@@ -842,62 +753,33 @@ If you do not have enough information, say so.
     }
 
     // --------------------------------------------------------
-    // NVIDIA request
+    // Hedged NVIDIA request
     // --------------------------------------------------------
 
-    console.log(
-      `[AI] NVIDIA REQUEST START | model=${NVIDIA_MODEL} | mode=${mode} | structured=${isStructured}`
-    );
+    const nextResponse = requestAI({
+      messages,
+      structured: isStructured,
+      maxTokens: isStructured ? STRUCTURED_MAX_TOKENS : NORMAL_MAX_TOKENS,
+      validate: (content) => {
+        if (!content.trim()) return false;
+        if (!isStructured) return true;
 
-    const nvidiaStartedAt = Date.now();
-
-    const nextResponse =
-  nvidia.chat.completions.create({
-    model: "nvidia/nemotron-3.5-lightning-30b-a3b",
-
-    messages,
-
-    temperature: 1,
-    top_p: 1,
-
-    max_tokens: isStructured
-      ? STRUCTURED_MAX_TOKENS
-      : NORMAL_MAX_TOKENS,
-
-  })
-        .then((completion) => {
-          const content =
-            completion.choices[0]?.message
-              ?.content;
-
-          if (!content) {
-            throw new Error(
-              "NVIDIA returned an empty response."
-            );
-          }
-
-          return content;
-        })
-        .then((content) => {
-          const nvidiaTime =
-            Date.now() - nvidiaStartedAt;
-
-          console.log(
-            `[AI] NVIDIA RESPONSE COMPLETE | ${nvidiaTime}ms | mode=${mode} | structured=${isStructured}`
-          );
-
-          writeCachedResponse(
-            cacheKey,
-            content
-          );
-
+        try {
+          extractJson(content);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    })
+        .then(({ content, provider }) => {
+          console.log(`[AI] RESPONSE WINNER | provider=${provider} | mode=${mode}`);
+          writeCachedResponse(cacheKey, content);
           return content;
         })
         .catch((error) => {
           console.error(
-            `[AI] NVIDIA REQUEST FAILED | ${
-              Date.now() - nvidiaStartedAt
-            }ms`,
+            `[AI] PROVIDER REQUEST FAILED | ${Date.now() - requestStartedAt}ms`,
             error
           );
 
@@ -920,26 +802,10 @@ If you do not have enough information, say so.
     try {
       response = await nextResponse;
     } catch {
-      if (isStructured) {
-        console.warn(`[AI] USING FALLBACK | provider failure | mode=${mode}`);
-        return NextResponse.json({
-          data: cacheStructuredFallback(cacheKey, mode, inputs),
-          mode,
-          personality: personality.name,
-          cached: false,
-          fallback: true,
-        });
-      }
-
-      console.warn(`[AI] USING CHAT FALLBACK | provider failure | mode=${mode}`);
-      return NextResponse.json({
-        response:
-          "I couldn't reach the live study-abroad model in time. Please try once more, or ask a shorter question so I can respond faster.",
-        mode,
-        personality: personality.name,
-        cached: false,
-        fallback: true,
-      });
+      return NextResponse.json(
+        { error: "The live AI service could not complete this request. Please try again." },
+        { status: 503 }
+      );
     }
 
     // --------------------------------------------------------
@@ -963,13 +829,10 @@ If you do not have enough information, say so.
           jsonError
         );
 
-        return NextResponse.json({
-          data: cacheStructuredFallback(cacheKey, mode, inputs),
-          mode,
-          personality: personality.name,
-          cached: false,
-          fallback: true,
-        });
+        return NextResponse.json(
+          { error: "The live AI returned an invalid response. Please try again." },
+          { status: 502 }
+        );
       }
 
       return NextResponse.json({
@@ -977,6 +840,7 @@ If you do not have enough information, say so.
         mode,
         personality: personality.name,
         cached: false,
+        creditsRemaining: credit.creditsRemaining,
       });
     }
 
@@ -985,6 +849,7 @@ If you do not have enough information, say so.
       mode,
       personality: personality.name,
       cached: false,
+      creditsRemaining: credit.creditsRemaining,
     });
   } catch (error: unknown) {
     const totalTime =
@@ -994,6 +859,16 @@ If you do not have enough information, say so.
       `[AI] ROUTE ERROR after ${totalTime}ms:`,
       error
     );
+
+    if (error instanceof CreditError) {
+      return NextResponse.json(
+        { error: error.message, retryAfterSeconds: error.retryAfter },
+        {
+          status: error.status,
+          headers: error.retryAfter ? { "Retry-After": String(error.retryAfter) } : undefined,
+        }
+      );
+    }
 
     // --------------------------------------------------------
     // Rate limit

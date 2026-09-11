@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Calculator,
@@ -13,6 +12,7 @@ import {
 import FutureAtlasAI from "@/components/ai/FutureAtlasAI";
 import FutureAtlasHeader from "@/components/FutureAtlasHeader";
 import GuidanceCTA from "@/components/GuidanceCTA";
+import { useAuth } from "@/components/auth/AuthGate";
 
 const tools = [
   {
@@ -57,8 +57,8 @@ const tools = [
   },
 ];
 export default function FutureAtlasDashboard() {
-     const router = useRouter();
      const [isAiOpen, setIsAiOpen] = useState(false);
+     const { user, requireAuth } = useAuth();
   return (
     <main className="min-h-screen bg-[#F8F9FC] text-slate-900">
       <FutureAtlasHeader />
@@ -108,7 +108,7 @@ export default function FutureAtlasDashboard() {
               return (
                 <button
                   key={tool.title}
-                  onClick={() => router.push(tool.path)}
+                  onClick={() => requireAuth(tool.path)}
                   className={`group relative overflow-hidden rounded-[28px] border border-slate-200 bg-white p-7 text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
                     index === 0
                       ? "lg:col-span-2"
@@ -172,7 +172,7 @@ export default function FutureAtlasDashboard() {
             </div>
 
             <button
-              onClick={() => setIsAiOpen(true)}
+              onClick={() => user ? setIsAiOpen(true) : requireAuth()}
               className="flex shrink-0 items-center justify-center gap-3 rounded-full bg-white px-7 py-4 text-sm font-semibold text-slate-900 transition hover:-translate-y-0.5 hover:bg-slate-100"
             >
               Ask Future Atlas AI

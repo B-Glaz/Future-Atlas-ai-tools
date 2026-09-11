@@ -481,12 +481,12 @@ export default function CostCalculator() {
         </div>
       </div>
 
-      <p className="mt-6 text-center text-[10px] leading-5 text-slate-400">
+      <div className="mt-6 text-center text-[10px] leading-5 text-slate-400">
         {isLoading ? (
           <ResultLoading messages={["Understanding your budget...", "Comparing study costs...", "Preparing your estimate..."]} />
         ) : error ||
           "Estimates are indicative only. Actual costs vary by university, location, lifestyle, exchange rates, and individual circumstances."}
-      </p>
+      </div>
 
       <p className="mt-3 text-center text-[10px] font-medium text-slate-400">
         Powered by One Window
