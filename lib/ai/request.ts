@@ -32,6 +32,7 @@ export async function requestAI<T>(
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${session.access_token}`,
+        "Idempotency-Key": crypto.randomUUID(),
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -41,7 +42,8 @@ export async function requestAI<T>(
 
     if (!response.ok) {
       throw new AIRequestError(
-        payload?.error || "The AI service could not complete this request.",
+        (typeof payload?.error === "object" ? payload.error.message : payload?.error) ||
+          "The AI service could not complete this request.",
         Number(response.headers.get("Retry-After")) || undefined
       );
     }

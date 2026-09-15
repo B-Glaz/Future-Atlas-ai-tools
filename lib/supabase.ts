@@ -8,6 +8,24 @@ export const supabase = createClient(
   key || "sb_publishable_g1QMLujrPuKfhAjjQ-BM4w_JkF8AtVE"
 );
 
+export function createPublicSupabase() {
+  return createClient(
+    url || "https://nfcixmyfqhpenbocplaa.supabase.co",
+    key || "sb_publishable_g1QMLujrPuKfhAjjQ-BM4w_JkF8AtVE",
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+
+export function createAdminSupabase() {
+  const secret = process.env.SUPABASE_SECRET_KEY;
+  if (!secret) throw new Error("SUPABASE_SECRET_KEY is not configured.");
+  return createClient(
+    url || "https://nfcixmyfqhpenbocplaa.supabase.co",
+    secret,
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+
 export function createRequestSupabase(accessToken: string) {
   return createClient(
     url || "https://nfcixmyfqhpenbocplaa.supabase.co",

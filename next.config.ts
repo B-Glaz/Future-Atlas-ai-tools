@@ -1,36 +1,5 @@
 import type { NextConfig } from "next";
 
-function normalizeOrigin(value: string) {
-  const trimmedValue = value.trim();
-
-  if (!trimmedValue) return null;
-
-  try {
-    const parsedUrl = new URL(trimmedValue);
-
-    if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
-      return null;
-    }
-
-    return parsedUrl.origin;
-  } catch {
-    return null;
-  }
-}
-
-function getEmbedFrameAncestors() {
-  const allowedOrigins = (process.env.EMBED_ALLOWED_ORIGINS || "")
-    .split(",")
-    .map(normalizeOrigin)
-    .filter((origin): origin is string => Boolean(origin));
-
-  if (!allowedOrigins.length) {
-    return "'none'";
-  }
-
-  return allowedOrigins.join(" ");
-}
-
 const protectedPageHeaders = [
   {
     key: "X-Frame-Options",
@@ -68,15 +37,6 @@ const nextConfig: NextConfig = {
       {
         source: "/eligibility/:path*",
         headers: protectedPageHeaders,
-      },
-      {
-        source: "/embed/:path*",
-        headers: [
-          {
-            key: "Content-Security-Policy",
-            value: `frame-ancestors ${getEmbedFrameAncestors()};`,
-          },
-        ],
       },
     ];
   },
