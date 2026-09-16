@@ -255,7 +255,7 @@ export default function EligibilityChecker() {
               error || "This tool provides an initial estimate based on the information you provide. It does not guarantee admission or visa approval. Requirements vary by university, programme, country, and applicant circumstances. Always verify requirements with official sources."
             )}
           </div>
-          {!isLoading && results && <ForumCTA context="eligibility" />}
+          {!isLoading && Boolean(results) && <ForumCTA context="eligibility" />}
         </div>
         <p className="mt-4 text-center text-[10px] font-medium text-slate-400">Powered by One Window</p>
       </div>

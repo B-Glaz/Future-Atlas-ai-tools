@@ -1,5 +1,5 @@
 import FutureAtlasHeader from "@/components/FutureAtlasHeader";
-import GuidanceForm from "@/components/GuidanceForm";
+import GuidanceForm from "@/components/ZohoGuidanceForm";
 
 export default function GuidancePage() {
   return (

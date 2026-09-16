@@ -176,11 +176,11 @@ export default function UniversityExplorer() {
               ))}
             </div>
 
-            {(isLoading || error || !results?.length) && (<div className="px-6 pb-6 text-center text-xs text-slate-400 sm:px-10">{isLoading ? <ResultLoading messages={["Reviewing your preferences...", "Comparing universities...", "Preparing your shortlist..."]} /> : error || "Your AI matches will appear here."}</div>)}
+            {(isLoading || error || !Array.isArray(results) || !results.length) && (<div className="px-6 pb-6 text-center text-xs text-slate-400 sm:px-10">{isLoading ? <ResultLoading messages={["Reviewing your preferences...", "Comparing universities...", "Preparing your shortlist..."]} /> : error || "Your AI matches will appear here."}</div>)}
 
             {/* Results Footer */}
             <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-5 sm:px-10"><div className="text-center"><p className="text-xs text-slate-400">Recommendations are personalized based on your preferences.</p></div></div>
-            {!isLoading && Boolean(results?.length) && <ForumCTA context="university" />}
+            {!isLoading && Array.isArray(results) && Boolean(results.length) && <ForumCTA context="university" />}
           </>
         )}
       </div>

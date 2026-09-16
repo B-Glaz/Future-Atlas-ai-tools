@@ -64,6 +64,12 @@ export function GET() {
           responses: { "200": { description: "OpenAPI 3.1 document" } },
         },
       },
+      "/health": {
+        get: {
+          summary: "Readiness without invoking an AI provider",
+          responses: { "200": { description: "Ready" }, "503": { description: "Degraded" } },
+        },
+      },
     },
     components: {
       securitySchemes: {

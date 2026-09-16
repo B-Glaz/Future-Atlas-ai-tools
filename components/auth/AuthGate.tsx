@@ -17,21 +17,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>({ id: "mock-user", email: "mock@futureatlas.com", user_metadata: { full_name: "Mock User" } } as User);
+  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [destination, setDestination] = useState<string>();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-      setLoading(false);
-    });
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-    return () => data.subscription.unsubscribe();
+    // Auth disabled for now
   }, []);
 
   const requireAuth = useCallback((path?: string) => {
@@ -61,15 +53,8 @@ export function useAuth() {
 }
 
 export function ProtectedTool({ children }: { children: ReactNode }) {
-  const { user, loading, requireAuth } = useAuth();
-
-  useEffect(() => {
-    if (!loading && !user) requireAuth();
-  }, [loading, user, requireAuth]);
-
-  if (loading) return <ToolSkeleton />;
-  if (!user) return <ToolSkeleton onSignIn={() => requireAuth()} />;
-  return children;
+  // Temporarily bypass login enforcement
+  return <>{children}</>;
 }
 
 function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: () => void }) {

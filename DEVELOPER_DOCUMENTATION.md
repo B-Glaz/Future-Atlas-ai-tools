@@ -9,8 +9,8 @@ Future Atlas is a Next.js 16 (App Router) application that provides AI-powered s
 - **Language**: TypeScript (strict mode)
 - **Styling**: Tailwind CSS 4, shadcn-style UI components
 - **Auth**: Supabase (magic-link OTP, Row Level Security)
-- **AI**: NVIDIA-hosted models (Nemotron 3.5 Lightning, Gemma 4, Mistral Nemotron) via OpenAI-compatible API
-- **Deployment**: Vercel/Cloudflare Workers compatible
+- **AI**: NVIDIA Nemotron 3.5 Lightning via NVIDIA's OpenAI-compatible API
+- **Deployment**: Cloudflare Workers through OpenNext
 
 ---
 
@@ -19,7 +19,8 @@ Future Atlas is a Next.js 16 (App Router) application that provides AI-powered s
 ```
 future-atlas-ai-tools/
 ├── app/                          # Next.js App Router pages & API routes
-│   ├── api/ai/route.ts          # Main AI endpoint (credits, caching, hedged providers)
+│   ├── api/ai/route.ts          # Authenticated application AI endpoint
+│   ├── api/v1/                  # Tenant AI, tenant management, OpenAPI, health
 │   ├── countries/page.tsx       # Country Explorer tool
 │   ├── universities/page.tsx    # University Explorer tool
 │   ├── scholarships/page.tsx    # Scholarship Explorer tool
@@ -50,12 +51,12 @@ future-atlas-ai-tools/
 │   ├── ForumCTA.tsx             # Community forum link (context-aware copy)
 │   ├── FutureAtlasHeader.tsx    # Top nav with back button + home link
 │   ├── FutureAtlasDashboard.tsx # Homepage hero + 5 tool cards + AI CTA
-│   ├── GuidanceForm.tsx         # Zoho form with client-side validation
+│   ├── ZohoGuidanceForm.tsx     # Native Zoho-hosted form embed
 │   └── GuidanceCTA.tsx          # "Get Personalized Guidance" link
 ├── lib/
 │   ├── ai/
 │   │   ├── request.ts           # Client-side AI fetch wrapper (auth + error handling)
-│   │   ├── providers.ts         # Hedged multi-provider NVIDIA routing
+│   │   ├── providers.ts         # Server-only NVIDIA provider
 │   │   ├── personalities.ts     # System prompts per AI mode
 │   │   ├── credits.ts           # Supabase credit consumption (30/day, 2s cooldown)
 │   │   ├── client-cache.ts      # In-memory LRU cache (10-min TTL)
@@ -69,8 +70,10 @@ future-atlas-ai-tools/
 │   ├── progressive-options.ts   # "More" button logic for option grids
 │   ├── supabase.ts              # Supabase client (browser + server helpers)
 │   └── utils.ts                 # (utility helpers)
-├── aicalls/                     # Example scripts for various AI providers
 ├── public/                      # Static assets (SVGs, favicon)
+├── custom-worker.mjs            # Cloudflare entrypoint + per-tenant iframe CSP
+├── open-next.config.ts          # OpenNext adapter configuration
+├── wrangler.jsonc               # Cloudflare Worker configuration
 ├── .env.example                 # Environment variable template
 ├── next.config.ts               # CSP headers, embed frame-ancestors
 ├── tsconfig.json                # TypeScript config (paths @/* -> ./*)
@@ -111,17 +114,18 @@ page.tsx → ProtectedTool → ToolComponent + GuidanceCTA
 - Embedded mode (`embedded=true`) for iframe usage
 
 ### 4. Embed Flow (`/embed`)
-- **Entry**: `app/embed/page.tsx` runs `evaluateEmbedAccess(headers)` server-side
-- Validates `Origin` and `Referer` headers against `EMBED_ALLOWED_ORIGINS`
+- **Entry**: `custom-worker.mjs` validates the exact embedding origin before the Next.js response is returned
+- Static integrations use `EMBED_ALLOWED_ORIGINS`; tenant integrations use `/embed?client=<public-id>` and a verified Supabase domain
+- The worker emits a request-specific CSP `frame-ancestors` value, or `'none'` when denied
 - If denied: logs security event, returns `AccessRestricted` component
 - If allowed: renders `EmbedApp` (client-side tool selector + iframe-mounted tools)
 - Tools navigate via `router.push(/embed?tool=...)` to stay in iframe
 - AI Mentor available in embed mode
 
 ### 5. Guidance Form (`/guidance`)
-- Client-side validated form (name, email, mobile, education, preferences)
-- Submits to Zoho Forms endpoint via hidden iframe (no page redirect)
-- Shows success message on submit
+- Uses Zoho's native hosted form so field handling and submission remain supported by Zoho
+- Shows a local skeleton until the form loads
+- Future Atlas does not retain the submitted lead data in browser storage
 
 ---
 
@@ -151,15 +155,8 @@ page.tsx → ProtectedTool → ToolComponent + GuidanceCTA
 ## AI System Architecture
 
 ### Provider Routing (`lib/ai/providers.ts`)
-```typescript
-// Three NVIDIA-hosted models with staggered delays for hedging
-1. Nemotron 3.5 Lightning (primary, 0ms delay)
-2. Gemma 4 31B (fallback 1, 4.5s delay)
-3. Mistral Nemotron (fallback 2, 7s delay)
-
-Promise.any() races all three; first valid response wins
-Others aborted via AbortController
-```
+- Uses the verified NVIDIA Nemotron 3.5 Lightning endpoint only
+- The client is created inside request execution, so missing build-time secrets do not break builds
 - **Timeout**: 25s per provider
 - **Validation**: Structured mode requires valid JSON; normal mode requires non-empty
 - **Temperature**: 0.2 (structured) / 0.5 (chat)
@@ -176,7 +173,7 @@ Others aborted via AbortController
 7. **Cache key**: Stable hash of `{ mode, responseFormat, messages }`
 8. **Cache lookup**: Global in-memory Map (24hr TTL, 250 entries max, LRU eviction)
 9. **In-flight dedup**: `pendingResponses` Map prevents duplicate simultaneous requests
-10. **Hedged request**: `requestAI()` from providers.ts
+10. **Provider request**: `requestAI()` from providers.ts
 11. **Cache write**: Store response on success
 12. **Return**: Structured → `{ data: parsedJson, creditsRemaining }` | Chat → `{ response, creditsRemaining }`
 
@@ -349,11 +346,12 @@ const generateResults = async (answers) => {
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `NVIDIA_API_KEY` | Yes | Primary NVIDIA API key (Nemotron) |
-| `NVIDIA_FALLBACK_API_KEY_1` | No | Fallback 1 (Gemma 4) |
-| `NVIDIA_FALLBACK_API_KEY_2` | No | Fallback 2 (Mistral Nemotron) |
 | `NVIDIA_MODEL` | No | Model override (default: nemotron-3.5-lightning-30b-a3b) |
+| `AI_ENABLED` | No | Global AI kill switch; defaults to enabled |
+| `AI_DISABLED_MODES` | No | Comma-separated per-tool kill switch |
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Supabase anon/publishable key |
+| `SUPABASE_SECRET_KEY` | Tenant admin | Server-only key used to activate verified tenant domains |
 | `NEXT_PUBLIC_FORUM_URL` | No | External forum link (default: /guidance) |
 | `EMBED_ALLOWED_ORIGINS` | For embed | Comma-separated exact origins (e.g., `https://client.com`) |
 | `SECURITY_ALERT_EMAIL` | No | Alert recipient email |
@@ -370,6 +368,8 @@ npm run dev        # Next.js dev server with Turbopack (--webpack flag)
 npm run build      # Production build
 npm run start      # Production server
 npm run lint       # ESLint (Next.js config)
+npm test           # Structured AI response contract check
+npm run cf:build   # Build the OpenNext Cloudflare artifact
 ```
 
 ### TypeScript
@@ -390,8 +390,8 @@ npm run lint       # ESLint (Next.js config)
 
 ## Deployment Notes
 
-### Vercel / Cloudflare Workers
-- **Edge compatible**: Yes (no Node.js-only APIs in middleware)
+### Cloudflare Workers
+- **Entrypoint**: `custom-worker.mjs`; there is no Next.js middleware
 - **Environment variables**: Set in platform dashboard (never commit `.env.local`)
 - **Supabase**: Works with Supabase Vercel integration or manual env vars
 - **NVIDIA API**: Keys must be server-side only (not `NEXT_PUBLIC_`)
@@ -404,7 +404,7 @@ npm run lint       # ESLint (Next.js config)
 ### Performance
 - **Client cache**: 10-min TTL avoids repeat AI calls
 - **Server cache**: 24-hr TTL, 250-entry LRU reduces provider costs
-- **Hedged providers**: First valid response wins (typically <3s)
+- **Provider timeout**: Failed NVIDIA calls stop after 25 seconds
 - **Structured prompts**: Low token limits (700) for speed
 - **Progressive options**: Reduces initial render payload
 
@@ -423,10 +423,7 @@ npm run lint       # ESLint (Next.js config)
 8. Update `routingInstructions` in `app/api/ai/route.ts`
 
 ### Adding an AI Provider
-1. Add entry to `configuredProviders()` in `lib/ai/providers.ts`
-2. Ensure OpenAI-compatible endpoint + API key
-3. Adjust `delayMs` for hedging priority
-4. Test validation logic in `runProvider()`
+Only add a fallback after its production endpoint, latency, structured output, quota, and terms have been verified. Implement it server-side in `lib/ai/providers.ts` and keep all keys out of client variables.
 
 ### Customizing Auth
 - Modify `AuthDialog` for different fields (phone, social providers)
@@ -484,19 +481,16 @@ npm run lint       # ESLint (Next.js config)
 ## Known Limitations & Future Work
 
 ### Current Limitations
-1. **No server-side session validation in middleware** — relies on client-side `ProtectedTool`
-2. **No rate limiting on `/api/ai` beyond credits** — could add IP-based limits
-3. **In-memory caches** — lost on serverless cold starts; consider Redis for production scale
-4. **Single Supabase project** — no multi-tenancy
-5. **Zoho form dependency** — hardcoded endpoint in `GuidanceForm`
-6. **No automated tests** — add Vitest/Playwright
+1. **In-memory response cache** — it is an optimization only and is lost on Worker cold starts; durable request/idempotency records remain in Supabase
+2. **Single AI provider** — controlled 503 responses protect the UI when NVIDIA is unavailable
+3. **Zoho form dependency** — the guidance page depends on Zoho Forms availability
+4. **Focused automated coverage** — structured response parsing has a runnable contract check; browser flows remain manual
 7. **No i18n** — English only
 8. **Analytics** — only PageSense script; no custom events
 
 ### Recommended Enhancements
-1. **Middleware auth** for true server-side protection
-2. **Redis cache** (Upstash/Vercel KV) for server cache persistence
-3. **Admin dashboard** for usage analytics, user management
+1. **Shared response cache** only when cold-start cache misses become a measured cost issue
+2. **Admin dashboard** for usage analytics and tenant management when operational volume justifies it
 4. **Webhook handlers** for Supabase auth events (email confirmation, etc.)
 5. **Structured logging** (Pino/Winston) with correlation IDs
 6. **E2E tests** for critical flows (auth → tool → AI → results)
@@ -508,7 +502,7 @@ npm run lint       # ESLint (Next.js config)
 ## Troubleshooting
 
 ### AI Returns Errors
-- **503 "All providers failed"**: Check NVIDIA API keys, network connectivity, model availability
+- **503 "AI service unavailable"**: Check the NVIDIA key, network connectivity, model availability, and kill switches
 - **502 "Invalid JSON"**: Provider returned malformed JSON; check prompt size, model compatibility
 - **429 "Daily credits exhausted"**: User hit 30/day limit; wait for reset
 - **429 "Wait 2 seconds"**: Request too soon; client should debounce
@@ -519,8 +513,8 @@ npm run lint       # ESLint (Next.js config)
 - **Profile upsert fails**: Check RLS policies on `future_atlas_profiles`
 
 ### Embed Issues
-- **AccessRestricted on allowed origin**: Verify `EMBED_ALLOWED_ORIGINS` exact match (scheme, host, port)
-- **CSP errors in console**: Check `frame-ancestors` value in `next.config.ts` matches allowed origins
+- **AccessRestricted on allowed origin**: Verify the exact scheme, host, and port in the tenant domain record or `EMBED_ALLOWED_ORIGINS`
+- **CSP errors in console**: Check the `frame-ancestors` response emitted by `custom-worker.mjs`
 - **Tools not loading in iframe**: Ensure `router.push` uses `/embed?tool=...` not absolute paths
 
 ### Build/Type Errors
@@ -540,4 +534,4 @@ npm run lint       # ESLint (Next.js config)
 
 ---
 
-*Document generated from source code analysis. Last updated: 2026-09-15*
+*Document generated from source code analysis. Last updated: 2026-09-16*

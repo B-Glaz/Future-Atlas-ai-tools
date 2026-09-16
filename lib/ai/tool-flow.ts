@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { requestAI } from "./request";
 import { getAIClientCacheKey, readAIClientCache, writeAIClientCache, clearAIClientCache } from "./client-cache";
 import { getProgressiveOptions } from "@/lib/progressive-options";
 import { isCustomStudyInputValid } from "@/components/Tools/CustomOptionInput";
+import { getStructuredResult } from "./structured-output";
 
 export type StepConfig<T extends string> = {
   id: T;
@@ -28,10 +29,12 @@ export function useToolFlow<T extends string>(config: ToolFlowConfig<T>) {
   const [answers, setAnswers] = useState<Partial<Record<T, string>>>({});
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [showResults, setShowResults] = useState(false);
-  const [results, setResults] = useState<unknown[] | null>(null);
+  const [results, setResults] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showAllOptions, setShowAllOptions] = useState(false);
+  const [hasRestored, setHasRestored] = useState(false);
+  const storageKey = `future-atlas:${aiMode}:draft`;
 
   const currentStep = steps[currentStepIndex];
   const currentAnswerKey = currentStep.id;
@@ -40,6 +43,33 @@ export function useToolFlow<T extends string>(config: ToolFlowConfig<T>) {
   const isOtherSelected = currentSelection === "Other";
   const canContinue = Boolean(currentSelection) && (!isOtherSelected || isCustomStudyInputValid(currentCustomValue));
   const visibleOptions = getProgressiveOptions(currentStep.options, showAllOptions);
+
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(storageKey) || "null") as {
+        step?: number;
+        answers?: Partial<Record<T, string>>;
+        customAnswers?: Record<string, string>;
+      } | null;
+      queueMicrotask(() => {
+        if (cancelled) return;
+        if (saved?.answers) setAnswers(saved.answers);
+        if (saved?.customAnswers) setCustomAnswers(saved.customAnswers);
+        if (Number.isInteger(saved?.step) && saved!.step! >= 0 && saved!.step! < steps.length) setCurrentStepIndex(saved!.step!);
+        setHasRestored(true);
+      });
+    } catch {
+      sessionStorage.removeItem(storageKey);
+      queueMicrotask(() => !cancelled && setHasRestored(true));
+    }
+    return () => { cancelled = true; };
+  }, [steps.length, storageKey]);
+
+  useEffect(() => {
+    if (!hasRestored) return;
+    sessionStorage.setItem(storageKey, JSON.stringify({ step: currentStepIndex, answers, customAnswers }));
+  }, [answers, currentStepIndex, customAnswers, hasRestored, storageKey]);
 
   const getResolvedSelection = useCallback(() =>
     isOtherSelected ? currentCustomValue.trim() : currentSelection,
@@ -60,19 +90,21 @@ export function useToolFlow<T extends string>(config: ToolFlowConfig<T>) {
       const cacheKey = getAIClientCacheKey(requestBody);
       const cachedData = readAIClientCache<Record<string, unknown>>(cacheKey);
 
-      if (cachedData && Array.isArray(cachedData[resultKey])) {
-        setResults(cachedData[resultKey] as unknown[]);
+      const cachedResult = cachedData ? getStructuredResult(cachedData, resultKey) : null;
+      if (cachedResult && (!Array.isArray(cachedResult) || cachedResult.length)) {
+        setResults(cachedResult);
         return;
       }
 
       const payload = await requestAI<Record<string, unknown>>(requestBody);
 
-      if (!Array.isArray(payload[resultKey]) || !payload[resultKey].length) {
+      const result = getStructuredResult(payload, resultKey);
+      if (!result || (Array.isArray(result) && !result.length)) {
         throw new Error(`The AI returned no ${resultKey} matches. Please try again.`);
       }
 
       writeAIClientCache(cacheKey, payload);
-      setResults(payload[resultKey] as unknown[]);
+      setResults(result);
     } catch (err) {
       console.error(`${aiMode} AI error:`, err);
       setError("We couldn't refresh your AI matches right now. Please try again shortly.");
@@ -117,7 +149,8 @@ export function useToolFlow<T extends string>(config: ToolFlowConfig<T>) {
     setError("");
     setIsLoading(false);
     clearAIClientCache();
-  }, []);
+    sessionStorage.removeItem(storageKey);
+  }, [storageKey]);
 
   const handleCustomChange = useCallback((value: string) => {
     setCustomAnswers(prev => ({ ...prev, [currentAnswerKey]: value }));

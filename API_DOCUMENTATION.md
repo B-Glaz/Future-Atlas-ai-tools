@@ -2,8 +2,9 @@
 
 ## Base URLs
 
-Sandbox and production use the deployment URL plus `/api/v1`. OpenAPI is available at `/api/v1/openapi`.
-Use separate tenants and credentials. Never reuse sandbox student data or keys in production.
+Current base URL: `https://future-atlas-ai.onewindowvcard.workers.dev/api/v1`.
+OpenAPI is available at `/api/v1/openapi`; provider-free readiness is `/api/v1/health`.
+Sandbox and production use separate tenant records and `fa_test_` / `fa_live_` credentials, so test requests and usage never share a tenant identity with production.
 
 ## Create tenant
 
@@ -29,6 +30,13 @@ Content-Type: application/json
 
 Full `fa_test_...` or `fa_live_...` key returns once. Store it only in client backend secret manager.
 
+List safe credential/domain metadata and current usage:
+
+```http
+GET /api/v1/tenants?tenantId=<tenant-id>
+Authorization: Bearer <supabase-user-token>
+```
+
 ## Generate
 
 ```http
@@ -51,7 +59,18 @@ Reuse an idempotency key only when retrying the same logical request.
 
 Iframe URL contains only a public tenant ID. Never place an API key in browser code.
 
+Supported tenant actions are `create`, `issueCredential`, `revokeCredential`, `registerDomain`,
+`verifyDomain`, `removeDomain`, and `setTenantStatus`. Suspending a tenant is the immediate kill switch.
+
 ## Limits
 
 Default tenant quota: 500 requests per rolling 24 hours. Default concurrency: 5.
 Requests require idempotency keys. `429` and `503` responses may include `Retry-After`.
+All responses include `X-Request-ID`; keep it when reporting failures.
+
+## Production configuration
+
+Set `NVIDIA_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` as Cloudflare variables/secrets.
+Domain verification also requires server-only `SUPABASE_SECRET_KEY`.
+Never prefix server secrets with `NEXT_PUBLIC_` or place tenant API keys in browser code.

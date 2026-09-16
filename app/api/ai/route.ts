@@ -4,6 +4,7 @@ import { consumeCredit, completeCreditRequest, CreditError } from "@/lib/ai/cred
 import { requestAI } from "@/lib/ai/providers";
 import type { AIMode } from "@/lib/ai/types";
 import { getCacheKey } from "@/lib/ai/cache-utils";
+import { isStructuredOutput } from "@/lib/ai/structured-output";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,12 @@ const MAX_HISTORY_CHARS = 8000;
 // These are deliberately much smaller than your previous 1200.
 const STRUCTURED_MAX_TOKENS = 700;
 const NORMAL_MAX_TOKENS = 900;
+
+function errorDetails(error: unknown) {
+  if (!(error instanceof Error)) return { name: "UnknownError" };
+  const status = "status" in error && typeof error.status === "number" ? error.status : undefined;
+  return { name: error.name, status };
+}
 
 // ============================================================
 // CONSTANTS
@@ -299,7 +306,7 @@ Rules:
 // JSON EXTRACTION
 // ============================================================
 
-function extractJson(content: string) {
+function extractJson(content: string): unknown {
   try {
     return JSON.parse(content);
   } catch {
@@ -462,13 +469,18 @@ export async function POST(
   request: NextRequest
 ) {
   const requestStartedAt = Date.now();
+  const routeRequestId = crypto.randomUUID();
+  let requestMode: string | undefined;
   let credit: Awaited<ReturnType<typeof consumeCredit>> | undefined;
 
   try {
     const contentLength = Number(request.headers.get("content-length") || 0);
 
     if (contentLength > 64_000) {
-      return NextResponse.json({ error: "Request is too large." }, { status: 413 });
+      return NextResponse.json(
+        { error: { code: "REQUEST_TOO_LARGE", message: "Request is too large.", retryable: false, requestId: routeRequestId } },
+        { status: 413, headers: { "X-Request-ID": routeRequestId } }
+      );
     }
 
     // --------------------------------------------------------
@@ -477,7 +489,15 @@ export async function POST(
 
     const body = await request.json();
 
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: { code: "INVALID_REQUEST", message: "A JSON object is required.", retryable: false, requestId: routeRequestId } },
+        { status: 400, headers: { "X-Request-ID": routeRequestId } }
+      );
+    }
+
     const mode = body.mode as AIMode;
+    requestMode = mode;
     const message = body.message;
     const inputs = body.inputs;
 
@@ -500,9 +520,16 @@ export async function POST(
     ) {
       return NextResponse.json(
         {
-          error: "A valid message under 8,000 characters is required.",
+          error: { code: "INVALID_REQUEST", message: "A valid message under 8,000 characters is required.", retryable: false, requestId: routeRequestId },
         },
-        { status: 400 }
+        { status: 400, headers: { "X-Request-ID": routeRequestId } }
+      );
+    }
+
+    if (responseFormat !== undefined && responseFormat !== "structured") {
+      return NextResponse.json(
+        { error: { code: "INVALID_RESPONSE_FORMAT", message: "responseFormat must be structured when provided.", retryable: false, requestId: routeRequestId } },
+        { status: 400, headers: { "X-Request-ID": routeRequestId } }
       );
     }
 
@@ -511,28 +538,18 @@ export async function POST(
     if (!personality) {
       return NextResponse.json(
         {
-          error: "Invalid AI mode.",
+          error: { code: "INVALID_MODE", message: "Invalid AI mode.", retryable: false, requestId: routeRequestId },
         },
-        { status: 400 }
+        { status: 400, headers: { "X-Request-ID": routeRequestId } }
       );
     }
 
-    // --------------------------------------------------------
-    // Fast local rejection
-    // --------------------------------------------------------
-
-    if (
-      isClearlyUnrelatedStudyAbroadQuestion(
-        mode,
-        message
-      )
-    ) {
-      return NextResponse.json({
-        response: STUDY_ABROAD_REDIRECT,
-        mode,
-        personality: personality.name,
-        cached: true,
-      });
+    const disabledModes = (process.env.AI_DISABLED_MODES || "").split(",").map((item) => item.trim()).filter(Boolean);
+    if (process.env.AI_ENABLED === "false" || disabledModes.includes(mode)) {
+      return NextResponse.json(
+        { error: { code: "AI_DISABLED", message: "This AI tool is temporarily unavailable.", retryable: true, requestId: routeRequestId } },
+        { status: 503, headers: { "Retry-After": "60", "X-Request-ID": routeRequestId } }
+      );
     }
 
     const requestHash = getCacheKey({ mode, message: message.trim(), inputs, responseFormat, history });
@@ -548,6 +565,19 @@ export async function POST(
         { error: { code: "AI_REQUEST_IN_PROGRESS", message: "This request is already processing.", retryable: true, retryAfter: 2, requestId: credit.requestId } },
         { status: 409, headers: { "Retry-After": "2", "X-Request-ID": credit.requestId } }
       );
+    }
+
+    if (isClearlyUnrelatedStudyAbroadQuestion(mode, message)) {
+      const payload = {
+        response: STUDY_ABROAD_REDIRECT,
+        mode,
+        personality: personality.name,
+        cached: true,
+        creditsRemaining: credit.creditsRemaining,
+        requestId: credit.requestId,
+      };
+      await completeCreditRequest(request, credit, "completed", payload, { durationMs: Date.now() - requestStartedAt });
+      return NextResponse.json(payload, { headers: { "X-Request-ID": credit.requestId } });
     }
 
     // --------------------------------------------------------
@@ -767,8 +797,7 @@ If you do not have enough information, say so.
         if (!isStructured) return true;
 
         try {
-          extractJson(content);
-          return true;
+          return isStructuredOutput(mode, extractJson(content));
         } catch {
           return false;
         }
@@ -781,10 +810,12 @@ If you do not have enough information, say so.
           return content;
         })
         .catch((error) => {
-          console.error(
-            `[AI] PROVIDER REQUEST FAILED | ${Date.now() - requestStartedAt}ms`,
-            error
-          );
+          console.error(JSON.stringify({
+            event: "ai_provider_request_failed",
+            mode,
+            durationMs: Date.now() - requestStartedAt,
+            ...errorDetails(error),
+          }));
 
           throw error;
         })
@@ -830,11 +861,16 @@ If you do not have enough information, say so.
 
       try {
         parsed = extractJson(response);
+        if (!isStructuredOutput(mode, parsed)) {
+          throw new Error("AI response did not match the required result shape.");
+        }
       } catch (jsonError) {
-        console.error(
-          "[AI] JSON PARSE ERROR:",
-          jsonError
-        );
+        console.error(JSON.stringify({
+          event: "ai_invalid_structured_response",
+          mode,
+          requestId: credit.requestId,
+          ...errorDetails(jsonError),
+        }));
 
         await completeCreditRequest(request, credit, "failed", undefined, {
           errorCode: "AI_INVALID_RESPONSE",
@@ -878,17 +914,28 @@ If you do not have enough information, say so.
     const totalTime =
       Date.now() - requestStartedAt;
 
-    console.error(
-      `[AI] ROUTE ERROR after ${totalTime}ms:`,
-      error
-    );
+    console.error(JSON.stringify({
+      event: "ai_route_error",
+      mode: requestMode,
+      requestId: credit?.requestId || routeRequestId,
+      durationMs: totalTime,
+      ...errorDetails(error),
+    }));
+
+    if (credit) {
+      await completeCreditRequest(request, credit, "failed", undefined, {
+        errorCode: "AI_INTERNAL_ERROR",
+        durationMs: totalTime,
+      }).catch(() => undefined);
+    }
 
     if (error instanceof CreditError) {
+      const requestId = credit?.requestId || routeRequestId;
       return NextResponse.json(
-        { error: { code: error.code, message: error.message, retryable: error.status >= 429, retryAfter: error.retryAfter } },
+        { error: { code: error.code, message: error.message, retryable: error.status >= 429, retryAfter: error.retryAfter, requestId } },
         {
           status: error.status,
-          headers: error.retryAfter ? { "Retry-After": String(error.retryAfter) } : undefined,
+          headers: { ...(error.retryAfter ? { "Retry-After": String(error.retryAfter) } : {}), "X-Request-ID": requestId },
         }
       );
     }
