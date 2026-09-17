@@ -20,8 +20,40 @@ type Authorization = {
   replayStatus: string;
   replayPayload: Record<string, unknown> | null;
   apiKey: string;
+  guest?: boolean;
 };
 
+const GUEST_DAILY_LIMIT = 20;
+type GuestBucket = { count: number; resetAt: number };
+const guestBuckets = ((globalThis as typeof globalThis & { futureAtlasGuestBuckets?: Map<string, GuestBucket> }).futureAtlasGuestBuckets ??= new Map());
+
+function guestKey(request: NextRequest) {
+  return request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+}
+
+function consumeGuestCredit(request: NextRequest): Authorization {
+  const now = Date.now();
+  const key = guestKey(request);
+  const bucket = guestBuckets.get(key);
+  const active = bucket && bucket.resetAt > now ? bucket : { count: 0, resetAt: now + 86_400_000 };
+
+  if (active.count >= GUEST_DAILY_LIMIT) {
+    throw new CreditError("Guest AI limit reached. Please try again tomorrow.", 429, "FA_DAILY_LIMIT", Math.ceil((active.resetAt - now) / 1000));
+  }
+
+  active.count += 1;
+  guestBuckets.set(key, active);
+
+  return {
+    requestId: crypto.randomUUID(),
+    cacheScope: `guest:${key}`,
+    creditsRemaining: GUEST_DAILY_LIMIT - active.count,
+    replayStatus: "new",
+    replayPayload: null,
+    apiKey: "",
+    guest: true,
+  };
+}
 const errors: Record<string, [number, string, number?]> = {
   FA_AUTH_REQUIRED: [401, "Sign in or provide a valid API key."],
   FA_INVALID_API_KEY: [401, "Invalid or expired API key."],
@@ -52,7 +84,7 @@ export async function consumeCredit(
     ? authorization.slice(7).trim()
     : "";
 
-  if (!accessToken) throw new CreditError("Sign in or provide a valid API key.", 401, "FA_AUTH_REQUIRED");
+  if (!accessToken) return consumeGuestCredit(request);
 
   const apiKey = accessToken.startsWith("fa_") ? accessToken : "";
   const client = apiKey ? createPublicSupabase() : createRequestSupabase(accessToken);
@@ -95,6 +127,7 @@ export async function completeCreditRequest(
   payload?: Record<string, unknown>,
   details?: { errorCode?: string; provider?: string; durationMs?: number }
 ) {
+  if (authorization.guest) return;
   const bearer = request.headers.get("authorization")?.slice(7).trim() || "";
   const client = authorization.apiKey ? createPublicSupabase() : createRequestSupabase(bearer);
   const { error } = await client.rpc("future_atlas_complete_request", {

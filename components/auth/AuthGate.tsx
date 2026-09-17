@@ -17,7 +17,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>({ id: "mock-user", email: "mock@futureatlas.com", user_metadata: { full_name: "Mock User" } } as User);
+  const [user, setUser] = useState<User | null>({ id: "mock-user", email: "mock@futureatlas.com", user_metadata: { full_name: "Mock User" } } as unknown as User);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [destination, setDestination] = useState<string>();

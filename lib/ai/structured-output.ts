@@ -19,6 +19,65 @@ function entries(value: unknown, fields: string[], listFields: string[] = [], nu
   );
 }
 
+function dedupeByName<T extends Record<string, unknown>>(items: T[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = String(item.name || item.title || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function countryRequested(inputs: unknown) {
+  if (!record(inputs) || !text(inputs.country)) return "";
+  return String(inputs.country).toLowerCase().trim();
+}
+
+function hasCountry(value: unknown, country: string) {
+  return !country || String(value || "").toLowerCase().includes(country);
+}
+
+export function normalizeStructuredOutput(mode: AIMode, value: Record<string, unknown>, inputs?: unknown) {
+  if (mode === "university" && Array.isArray(value.universities)) {
+    const requestedCountry = countryRequested(inputs);
+    value.universities = dedupeByName(value.universities.filter(record))
+      .filter((item) => hasCountry(item.country, requestedCountry) || hasCountry(item.location, requestedCountry))
+      .map((item) => ({
+        ...item,
+        ranking: String(item.ranking || "").match(/#?\d/) ? "Verify current ranking" : item.ranking,
+        tuition: String(item.tuition || "").match(/\d/) ? "Check official tuition page" : item.tuition,
+      }));
+  }
+
+  if (mode === "country" && Array.isArray(value.countries)) value.countries = dedupeByName(value.countries.filter(record));
+  if (mode === "scholarship" && Array.isArray(value.scholarships)) {
+    value.scholarships = dedupeByName(value.scholarships.filter(record)).map((item) => ({
+      ...item,
+      amount: "Varies; check official provider",
+      coverage: "Varies; check official provider",
+      deadline: "Varies by programme/provider",
+    }));
+  }
+  if (mode === "cost") {
+    const source = record(inputs) ? inputs : {};
+    value.country ||= source.country || "Selected country";
+    value.course ||= source.course || source.study || "Selected course";
+    value.studyLevel ||= source.studyLevel || source.level || "Selected level";
+    value.budget ||= source.budget || "Selected budget";
+    if (typeof value.aiAnalysis === "string") {
+      value.aiAnalysis = value.aiAnalysis
+        .replace(/€11,?300|11,?300 euros?/gi, "official current proof-of-funds amount")
+        .replace(/up to 20 hrs?\/week/gi, "within the current student-work rules");
+    }
+  }
+
+  if (mode === "eligibility" && Array.isArray(value.nextSteps)) {
+    value.nextSteps = value.nextSteps.map((step) => String(step).replace(/\b(Fall|Spring|Summer|Winter)\s+20\d{2}\b/gi, "the next available intake"));
+  }
+  return value;
+}
+
 export function getStructuredResult(payload: Record<string, unknown>, resultKey: string) {
   const data = payload.data;
   if (!record(data)) return null;

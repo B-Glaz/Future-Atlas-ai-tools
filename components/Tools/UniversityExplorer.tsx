@@ -162,7 +162,7 @@ export default function UniversityExplorer() {
             {/* Results */}
             <div className="grid gap-4 p-6 sm:p-10 lg:grid-cols-3">
               {(results as UniversityMatch[] || []).map((university, index) => (
-                <div key={university.name} className="group rounded-3xl border border-slate-200 bg-white p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-900/5">
+                <div key={`${university.name}-${index}`} className="group rounded-3xl border border-slate-200 bg-white p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-900/5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-xs font-bold text-slate-700">{university.shortName}</div>
                     <div className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-600"><Star size={12} fill="currentColor" />{university.ranking}</div>

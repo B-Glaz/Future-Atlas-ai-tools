@@ -20,18 +20,10 @@ export async function requestAI<T>(
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const { supabase } = await import("@/lib/supabase");
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (!session) {
-      throw new AIRequestError("Sign in to use Future Atlas AI.");
-    }
-
     const response = await fetch("/api/ai", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
         "Idempotency-Key": crypto.randomUUID(),
       },
       body: JSON.stringify(body),

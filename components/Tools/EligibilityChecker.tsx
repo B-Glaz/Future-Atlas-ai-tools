@@ -213,8 +213,8 @@ export default function EligibilityChecker() {
               <p className="mt-1 text-xs text-slate-500">A quick view of the areas that may influence your eligibility.</p>
             </div>
             <div className="mt-5 grid gap-4 md:grid-cols-3">
-              {(assessment?.breakdown || []).slice(0, 3).map((item) => (
-                <div key={item.title} className="rounded-3xl border border-slate-200 p-5">
+              {(assessment?.breakdown || []).slice(0, 3).map((item, index) => (
+                <div key={`${item.title}-${index}`} className="rounded-3xl border border-slate-200 p-5">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold text-slate-800">{item.title}</p>
                     {item.status === "caution" ? (

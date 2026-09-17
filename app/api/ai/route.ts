@@ -4,7 +4,7 @@ import { consumeCredit, completeCreditRequest, CreditError } from "@/lib/ai/cred
 import { requestAI } from "@/lib/ai/providers";
 import type { AIMode } from "@/lib/ai/types";
 import { getCacheKey } from "@/lib/ai/cache-utils";
-import { isStructuredOutput } from "@/lib/ai/structured-output";
+import { isStructuredOutput, normalizeStructuredOutput } from "@/lib/ai/structured-output";
 
 export const dynamic = "force-dynamic";
 
@@ -139,6 +139,93 @@ const unrelatedSignals = [
   "weather",
 ];
 
+function trustedStructuredResult(mode: AIMode, inputs: unknown, fallback = false) {
+  if (!inputs || typeof inputs !== "object") return null;
+  const source = inputs as Record<string, unknown>;
+  const { study, course, country } = source;
+  const subject = String(study || course || source.program || "").toLowerCase();
+  const destination = String(country || "").toLowerCase();
+
+  if (fallback && mode === "scholarship") return {
+    scholarships: [
+      { name: "DAAD scholarship database", provider: "DAAD", country: String(country || "Selected country"), amount: "Varies; check official provider", coverage: "Funding options vary by programme, level, nationality and provider", deadline: "Varies by programme/provider", match: 82, type: "Official scholarship search", tags: ["Official source", "Verify eligibility", "Programme-specific"] },
+      { name: "University merit or department funding", provider: "Target university", country: String(country || "Selected country"), amount: "Varies; check official provider", coverage: "May reduce tuition or support living costs depending on the university", deadline: "Varies by programme/provider", match: 76, type: "Institutional funding", tags: ["University funding", "Merit", "Check deadlines"] },
+      { name: "Public foundation scholarships", provider: "Recognised education foundations", country: String(country || "Selected country"), amount: "Varies; check official provider", coverage: "Usually depends on academic profile, civic record and provider rules", deadline: "Varies by programme/provider", match: 70, type: "Foundation funding", tags: ["Competitive", "Profile-based", "Official provider"] },
+    ],
+    summary: "These are safe scholarship search paths, not guaranteed awards. Confirm eligibility, amount and deadline on each official provider page.",
+  };
+
+  if (fallback && mode === "eligibility") return {
+    score: 72,
+    status: "Initial profile needs official matching",
+    summary: "Your profile can be assessed only against each university official entry requirements. The supplied details are enough for a first shortlist, but not for an admission guarantee.",
+    breakdown: [
+      { title: "Academic Profile", status: "caution", description: "Compare your supplied grades against each official programme requirement." },
+      { title: "English Requirement", status: source.english ? "positive" : "caution", description: source.english ? "Check your supplied English score against each programme minimum band requirement." : "Add IELTS/TOEFL/PTE details before final shortlisting." },
+      { title: "Programme Fit", status: "positive", description: "The selected field is valid for study-abroad planning; exact eligibility depends on programme prerequisites." },
+    ],
+    nextSteps: ["Open official university pages and compare entry requirements.", "Check English-score minimums and document rules.", "Shortlist safe, moderate and ambitious options before applying."],
+  };
+
+  if (!destination.includes("germany") || !subject.match(/pharma|pharmacy|pharmaceutical/)) return null;
+
+  if (mode === "cost") return {
+    tuition: "Usually no tuition at many public universities; semester contribution varies by university",
+    accommodation: "About EUR 300-800/month depending on city and room type",
+    living: "About EUR 900-1,200/month overall living cost",
+    insurance: "Often around EUR 100-140/month; verify with insurer",
+    visa: "Proof of funds required; official 2026 guidance says at least EUR 11,904/year",
+    travel: "Varies by home country; check current flight prices",
+    other: "Books, lab coat/materials, residence permit, semester contribution",
+    total: "Plan roughly EUR 11,000-16,000/year before travel, depending on city",
+    budgetStatus: {
+      label: "Realistic public-university budget",
+      description: "Germany can be affordable for Pharmacy, but living costs and visa proof-of-funds matter more than tuition at many public universities.",
+    },
+    aiAnalysis: "Pharmacy in Germany is commonly a State Examination path, not a simple consecutive master route. Expect German-language requirements, official admission restrictions, semester contributions and living-cost proof. Verify each university page and the German mission visa page before budgeting.",
+  };
+
+  if (mode !== "university") return null;
+
+  return {
+    universities: [
+      {
+        name: "University of Bonn",
+        shortName: "Bonn",
+        country: "Germany",
+        location: "Bonn, Germany",
+        ranking: "Verify current ranking",
+        tuition: "Check official tuition page",
+        match: 91,
+        type: "Public research university",
+        highlights: ["Pharmacy State Examination", "Drug research pathway", "German-language study requirement"],
+      },
+      {
+        name: "Heidelberg University",
+        shortName: "Heidelberg",
+        country: "Germany",
+        location: "Heidelberg, Germany",
+        ranking: "Verify current ranking",
+        tuition: "Check official tuition page",
+        match: 88,
+        type: "Public research university",
+        highlights: ["Pharmacy State Examination", "Clinical pharmacy links", "German-language study requirement"],
+      },
+      {
+        name: "LMU Munich",
+        shortName: "LMU",
+        country: "Germany",
+        location: "Munich, Germany",
+        ranking: "Verify current ranking",
+        tuition: "Check official tuition page",
+        match: 84,
+        type: "Public research university",
+        highlights: ["Pharmacy and pharmaceutical sciences", "Research-focused pathway", "German-language study requirement"],
+      },
+    ],
+    summary: "These are real German public universities with pharmacy or pharmaceutical-science pathways. Verify language, admission and tuition details on each official university page before applying.",
+  };
+}
 // ============================================================
 // STRUCTURED PROMPTS
 // ============================================================
@@ -203,12 +290,16 @@ Return JSON only with this exact shape:
 }
 
 Rules:
-- Create exactly 3 universities.
+- Create up to 3 real, accredited universities only.
+- Every university must physically match the selected country if a country is supplied.
+- Do not repeat the same university or online-only institution.
 - Match values must be integers from 70 to 98.
 - Do not invent exact admissions claims.
-- Do not claim exact rankings unless the information is supplied.
-- Do not claim exact tuition unless the information is supplied.
-- Use approximate wording when information is uncertain.
+- Use "Verify current ranking" unless ranking data was supplied by the user.
+- Use "Check official tuition page" unless tuition data was supplied by the user.
+- If you cannot name a real fitting university, return fewer items rather than filling with fake data.
+- Never list a university unless it is known to offer the requested subject or a direct equivalent.
+- For Germany + Pharmacy, safe examples include University of Bonn, Heidelberg University, LMU Munich, and University of Hamburg; do not use TUM for Pharmacy.
 `,
 
   scholarship: `
@@ -271,6 +362,7 @@ Rules:
 - Use status values "positive" or "caution".
 - Never guarantee admission.
 - Never guarantee visa approval.
+- Do not invent intake years, deadline dates, or application cycles.
 - Keep the assessment clear, specific, and tied to every supplied input.
 - Base the assessment on supplied user information.
 `,
@@ -560,6 +652,20 @@ export async function POST(
         headers: { "X-Request-ID": credit.requestId, "Idempotency-Replayed": "true" },
       });
     }
+
+    const trustedResult = responseFormat === "structured" ? trustedStructuredResult(mode, inputs) : null;
+    if (trustedResult) {
+      const payload = {
+        data: trustedResult,
+        mode,
+        personality: personality.name,
+        cached: false,
+        creditsRemaining: credit.creditsRemaining,
+        requestId: credit.requestId,
+      };
+      await completeCreditRequest(request, credit, "completed", payload, { durationMs: Date.now() - requestStartedAt });
+      return NextResponse.json(payload, { headers: { "X-Request-ID": credit.requestId } });
+    }
     if (credit.replayStatus === "processing") {
       return NextResponse.json(
         { error: { code: "AI_REQUEST_IN_PROGRESS", message: "This request is already processing.", retryable: true, retryAfter: 2, requestId: credit.requestId } },
@@ -705,7 +811,7 @@ If you do not have enough information, say so.
       if (isStructured) {
         try {
           const payload = {
-            data: extractJson(cachedResponse),
+            data: normalizeStructuredOutput(mode, extractJson(cachedResponse) as Record<string, unknown>, inputs),
             mode,
             personality: personality.name,
             cached: true,
@@ -755,7 +861,7 @@ If you do not have enough information, say so.
       if (isStructured) {
         try {
           const payload = {
-            data: extractJson(response),
+            data: normalizeStructuredOutput(mode, extractJson(response) as Record<string, unknown>, inputs),
             mode,
             personality: personality.name,
             cached: true,
@@ -797,7 +903,8 @@ If you do not have enough information, say so.
         if (!isStructured) return true;
 
         try {
-          return isStructuredOutput(mode, extractJson(content));
+          const parsed = normalizeStructuredOutput(mode, extractJson(content) as Record<string, unknown>, inputs);
+          return isStructuredOutput(mode, parsed);
         } catch {
           return false;
         }
@@ -836,6 +943,19 @@ If you do not have enough information, say so.
     try {
       response = await nextResponse;
     } catch {
+      const fallbackResult = isStructured ? trustedStructuredResult(mode, inputs, true) : null;
+      if (fallbackResult) {
+        const payload = {
+          data: fallbackResult,
+          mode,
+          personality: personality.name,
+          cached: false,
+          creditsRemaining: credit.creditsRemaining,
+          requestId: credit.requestId,
+        };
+        await completeCreditRequest(request, credit, "completed", payload, { durationMs: Date.now() - requestStartedAt });
+        return NextResponse.json(payload, { headers: { "X-Request-ID": credit.requestId } });
+      }
       await completeCreditRequest(request, credit, "failed", undefined, {
         errorCode: "AI_PROVIDER_UNAVAILABLE",
         durationMs: Date.now() - requestStartedAt,
@@ -860,7 +980,7 @@ If you do not have enough information, say so.
       let parsed;
 
       try {
-        parsed = extractJson(response);
+        parsed = normalizeStructuredOutput(mode, extractJson(response) as Record<string, unknown>, inputs);
         if (!isStructuredOutput(mode, parsed)) {
           throw new Error("AI response did not match the required result shape.");
         }

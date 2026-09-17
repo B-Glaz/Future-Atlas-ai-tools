@@ -183,7 +183,7 @@ export default function CountryExplorer() {
             {/* Results */}
             <div className="grid gap-4 p-6 sm:p-10 lg:grid-cols-3">
               {(results as CountryMatch[] || []).map((country, index) => (
-                <div key={country.name} className="group rounded-3xl border border-slate-200 bg-white p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-900/5">
+                <div key={`${country.name}-${index}`} className="group rounded-3xl border border-slate-200 bg-white p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-900/5">
                   <div className="flex items-start justify-between">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-lg font-semibold text-slate-700">{country.code}</div>
                     <div className="text-right"><p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Match</p><p className="mt-0.5 text-xl font-bold text-slate-900">{country.score}%</p></div>
