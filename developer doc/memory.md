@@ -1,4 +1,82 @@
-# Future Atlas AI - Project Memory
+# Future Atlas AI - Current Status (Authoritative)
+
+Last verified: 2026-09-17 (Asia/Kolkata). Project: `C:\Digital Manager\CODE\Future atlas AI tools`.
+Repository: `https://github.com/B-Glaz/Future-Atlas-ai-tools.git`. Production URL: `https://future-atlas-ai.onewindowvcard.workers.dev/`.
+
+This section supersedes conflicting statements in the archived snapshot below.
+
+## Current Objective And Stack
+
+Future Atlas AI is a Next.js study-abroad product with five tools, an AI mentor, account credits, tenant API access, controlled iframe embedding, consent analytics, and Zoho guidance. Stack: Next.js 16.3.4, React 19.2.4, TypeScript, Tailwind 4, Supabase Auth/Postgres, OpenAI SDK against server-side OpenAI-compatible providers, Cloudflare Workers via OpenNext 1.20.6/Wrangler 4.131.2. `custom-worker.mjs` is the Worker entry; do not restore `middleware.ts`.
+
+Routes: `/`, `/countries`, `/universities`, `/scholarships`, `/cost-calculator`, `/eligibility`, `/guidance`, `/embed`; APIs: `/api/ai`, `/api/credits`, `/api/account`, `/api/events`, `/api/v1/ai`, `/api/v1/health`, `/api/v1/openapi`, `/api/v1/tenants`.
+
+## Verified Build And Test State
+
+- `npm test`: passed.
+- `npm run lint`: passed with no warnings.
+- `npm run build`: passed; 12/12 static pages and all dynamic APIs generated.
+- `npm run cf:build`: passed; `.open-next/worker.js` generated.
+- Browser verified: homepage, consent Details, Necessary-only path, Privacy reopen control, all eight page routes, guidance iframe render, restricted `/embed`, auth gate dialog, University navigation, 4 + More layout, and clean console. Authenticated result submissions still need live Supabase OTP/session configuration.
+- Real NVIDIA structured calls succeeded for all five tool modes.
+- Current edits are not deployed. Production status after this work: **Needs Verification**.
+
+## Authentication And Credits
+
+`components/auth/AuthGate.tsx` now uses real Supabase Auth: email OTP entry (not magic-link UI), Google OAuth, and localhost-only password login. All tool pages are protected. Google provider dashboard setup is **Needs Verification**. The Google client secret exposed in chat must be rotated and must never enter source or a `NEXT_PUBLIC_` variable.
+
+Target credit policy: 30 credits reset at Asia/Kolkata midnight; tools cost 1; chat costs 0.25/0.5/0.75/1 based on output length; the UI displays floored whole credits; failed responses cost zero. History reads, client/server cache hits, duplicate in-flight reuse, and scope redirects do not consume credits. A successful AI generation updates the visible counter immediately through `future_atlas:credits`. Per-user concurrency is 2 and global in-flight admission is 100.
+
+Implemented in `lib/ai/credit-policy.ts`, `lib/ai/credits.ts`, `app/api/credits/route.ts`, `components/CreditCounter.tsx`, and `supabase/migrations/20260917_future_atlas_user_credit_quarters.sql`.
+
+**Database blocker:** migration is local but was not applied to Supabase project `nfcixmyfqhpenbocplaa`; the production mutation was rejected pending exact user approval. Until applied, `/api/credits` returns the live bounded fallback balance instead of an empty/unavailable counter, and a narrowly scoped missing-RPC compatibility path admits signed-in AI requests through the bounded guest limiter. Other database/security failures remain closed. Signed-in durable credits and event storage still require the migration before deployment. Temporary guest admission is in-memory and is not durable bulk-user protection.
+
+## AI Runtime
+
+`lib/ai/providers.ts` provides modular, request-time routing. Supported adapters: generic OpenAI-compatible, NVIDIA, OpenRouter, OpenAI, DeepSeek. Order comes from `AI_PROVIDER_ORDER`; attempts from `AI_MAX_PROVIDER_ATTEMPTS` (1-3, default 2). Multiple configured providers fail over sequentially; a single provider is retried once. Each attempt has a 25-second timeout and rejects empty, invalid, or token-truncated output. No provider key is client-side or initialized during build.
+
+Only NVIDIA was verified configured locally. A second provider is required for genuine outage fallback. Three provider failures pause that provider for 30 seconds; a mocked fallback test proves an invalid first provider reaches NVIDIA. One mentor timeout was observed. The model also incorrectly redirected a valid Pharmacy question; scope enforcement is now backend-owned and the duplicate model-side scope decision was removed. Static Pharmacy/Germany and generic scholarship/eligibility result bypasses were removed, so every successful result now comes from the configured AI path; provider failure is visible and costs zero credits. Structured modes use schema validation, normalization, request deduplication/cache, country aliases, and visible request-ID errors. No live web search exists; time-sensitive data must direct users to official sources. Never add fake exact fees, ranks, deadlines, scholarships, or guarantees.
+
+## Tenant API And Embedding
+
+Base URL: `https://future-atlas-ai.onewindowvcard.workers.dev/api/v1`. OpenAPI: `/api/v1/openapi`. Full guide: `developer doc/API_DOCUMENTATION.md`.
+
+`POST /api/v1/ai` requires a server-held `fa_test_`/`fa_live_` key, `Idempotency-Key`, and the exact registered/verified HTTPS `Origin`; plain HTTP is allowed only for localhost/127.0.0.1 development. Missing origin is rejected. Sandbox and production tenants/credentials remain separate. `supabase/migrations/20260916_future_atlas_tenant_platform.sql` is the source-controlled tenant baseline. Tenant end-to-end issuance, DNS verification, quota, revoke, and API generation tests are **Needs Verification**.
+
+`custom-worker.mjs` secures `/embed` with per-request `frame-ancestors` based on tenant public UUID/Supabase authorization or `EMBED_ALLOWED_ORIGINS`; denied embeds receive `frame-ancestors 'none'`. Normal pages remain SAMEORIGIN/self-only through `next.config.ts`.
+
+## Consent, History, Forms, And UI
+
+`components/ConsentManager.tsx` implements mandatory Necessary consent and optional Additional consent. Accept enables both; Reject explains Necessary and permits Necessary-only continuation; Details describes both. A permanent Privacy control reopens choices, consent stores a version/timestamp, and Global Privacy Control recommends Necessary-only. Zoho PageSense loads only after Additional consent. Allowlisted events post through `/api/events`; the migration creates RLS-protected `future_atlas_events` with 13-month expiry metadata. A restricted cleanup function exists, but no scheduled cleanup job is configured.
+
+Device storage is account-scoped and keeps consent, anonymous ID, tool drafts, up to 8 compact contexts, and up to 50 IndexedDB chat/history entries. The mentor receives only the last 3 contexts capped at 4,000 characters. `POST /api/account` provides explicit opt-in backup; logout never uploads history. `DELETE /api/account` removes application data and the authenticated Supabase user after migration. Third-party advertising-profile collection is not implemented without a lawful, specific data contract and explicit purpose.
+
+`components/ZohoGuidanceForm.tsx` embeds the verified Zoho form with a native loading skeleton and 1180px viewport; data stays in Zoho. A custom-skinned native form cannot safely forward to Zoho until a documented Forms API/webhook/action and field contract are supplied. D1 backup and alert emails are not implemented because they require approved retention, credentials, and a mail service.
+
+UI: homepage remains unchanged; tool roots are centered/mobile-responsive; tool option groups follow 4 + More; chatbot is mobile bounded; header logo links home; profile button is absent; contextual forum CTA falls back to `/guidance`; tool and chat context persist locally. Header shows an always-visible right-side credit status (`Sign in for credits`, live balance, zero balance, `Credits pending`, or `Credits unavailable`) and logout icon. Backup and clear-history icons are removed. Delete-account action remains code-only and hidden. Logout opens a confirmation dialog with `Back up history and sign out`, `Sign out without backup`, and `Cancel`. Cookie consent waits for client storage, uses a rounded compact panel, and safely handles malformed local consent.
+
+## Environment Names (No Values)
+
+- AI: `NVIDIA_API_KEY`, `NVIDIA_MODEL`, `AI_PROVIDER_ORDER`, `AI_MAX_PROVIDER_ATTEMPTS`, `AI_PROVIDER_NAME`, `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, optional OpenRouter/OpenAI/DeepSeek key+model pairs, `AI_ENABLED`, `AI_DISABLED_MODES`.
+- Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, server-only `SUPABASE_SECRET_KEY`.
+- Other: `EMBED_ALLOWED_ORIGINS`, `NEXT_PUBLIC_FORUM_URL`, security alert variables in `.env.example`.
+- `lib/supabase.ts` still has public fallback project configuration; secret values are not present there.
+
+## Release Blockers And Next Steps
+
+1. Get exact approval and apply both local migrations to project `nfcixmyfqhpenbocplaa`; run Supabase security/performance advisors.
+2. Rotate exposed Google secret, configure Supabase Google provider, and verify callback URLs.
+3. Configure/test a second provider/model for outage fallback.
+4. Test authenticated OTP, credits, no-charge failures, midnight reset, and login persistence against migrated Supabase.
+5. Test sandbox tenant key/domain/idempotency/quota/revoke/iframe flow end to end.
+6. Obtain supported Zoho submission integration before replacing the iframe.
+7. Confirm production secrets, deploy, then smoke-test every route and mode.
+
+Guardrails: never expose secrets client-side; never initialize provider clients at module scope; never restore Node middleware; never charge failures; never bypass exact tenant origin approval; keep route/provider/database contracts portable for later AWS/Mongo migration.
+
+---
+
+# Archived Snapshot (Superseded Where Conflicting)
 
 Last updated: 2026-09-17
 Project folder: `C:\Digital Manager\CODE\Future atlas AI tools`
@@ -351,6 +429,7 @@ Verified current code:
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
   - `SUPABASE_SECRET_KEY` for admin actions only
+  - `NEXT_PUBLIC_LOCAL_DEV_USER_NAME`, `NEXT_PUBLIC_LOCAL_DEV_USER_EMAIL`, `NEXT_PUBLIC_LOCAL_DEV_USER_PASSWORD` for localhost-only developer setup. Example defaults are in `.env.example`; never use these credentials in production.
 - It also contains fallback public Supabase URL/key values.
 - Fallback project URL in code: `https://nfcixmyfqhpenbocplaa.supabase.co`
 - The fallback publishable key is public-style, not a service secret, but relying on code fallback is less strict than env-only config.

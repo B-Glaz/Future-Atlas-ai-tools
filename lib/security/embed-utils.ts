@@ -6,7 +6,8 @@ export function normalizeOrigin(value: string) {
   try {
     const parsedUrl = new URL(trimmedValue);
 
-    if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+    const localHttp = parsedUrl.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsedUrl.hostname);
+    if (parsedUrl.protocol !== "https:" && !localHttp) {
       return null;
     }
 
@@ -21,16 +22,6 @@ export function getAllowedEmbedOrigins() {
     .split(",")
     .map(normalizeOrigin)
     .filter((origin): origin is string => Boolean(origin));
-}
-
-export function getEmbedFrameAncestors() {
-  const allowedOrigins = getAllowedEmbedOrigins();
-
-  if (!allowedOrigins.length) {
-    return "'none'";
-  }
-
-  return allowedOrigins.join(" ");
 }
 
 export function getRefererOrigin(referer: string | null) {

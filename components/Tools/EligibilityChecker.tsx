@@ -143,7 +143,7 @@ export default function EligibilityChecker() {
 
   if (showResults) {
     return (
-      <div className="w-full max-w-5xl">
+      <div className="mx-auto w-full max-w-5xl">
         <div className="mb-4 flex justify-end">
           <button type="button" onClick={clearSelection} className="text-sm font-medium text-slate-500 transition hover:text-slate-900">
             Clear Selection
@@ -263,7 +263,7 @@ export default function EligibilityChecker() {
   }
 
   return (
-    <div className="w-full max-w-5xl">
+    <div className="mx-auto w-full max-w-5xl">
       <div className="mb-4 flex justify-end">
         <button type="button" onClick={clearSelection} className="text-sm font-medium text-slate-500 transition hover:text-slate-900">
           Clear Selection

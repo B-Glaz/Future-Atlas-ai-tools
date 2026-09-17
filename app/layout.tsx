@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Script from "next/script";
 import { AuthProvider } from "@/components/auth/AuthGate";
+import ConsentManager from "@/components/ConsentManager";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -33,13 +33,8 @@ export default function RootLayout({
         className="min-h-full flex flex-col"
         suppressHydrationWarning
       >
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>{children}<ConsentManager /></AuthProvider>
       </body>
-      <Script
-        id="pagesenseCode"
-        strategy="afterInteractive"
-        src="https://cdn-in.pagesense.io/js/onewindow/42f611b451ab4de4a126d343bc30d3d1.js"
-      />
     </html>
   );
 }

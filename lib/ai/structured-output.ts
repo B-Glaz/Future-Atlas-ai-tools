@@ -31,11 +31,26 @@ function dedupeByName<T extends Record<string, unknown>>(items: T[]) {
 
 function countryRequested(inputs: unknown) {
   if (!record(inputs) || !text(inputs.country)) return "";
-  return String(inputs.country).toLowerCase().trim();
+  return normalizeCountry(inputs.country);
 }
 
 function hasCountry(value: unknown, country: string) {
-  return !country || String(value || "").toLowerCase().includes(country);
+  return !country || normalizeCountry(value).includes(country);
+}
+
+const countryAliases: Record<string, string> = {
+  "united states of america": "united states",
+  "united states": "united states",
+  usa: "united states",
+  us: "united states",
+  "united kingdom": "united kingdom",
+  uk: "united kingdom",
+  uae: "united arab emirates",
+};
+
+function normalizeCountry(value: unknown) {
+  const normalized = String(value || "").toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+  return countryAliases[normalized] || normalized;
 }
 
 export function normalizeStructuredOutput(mode: AIMode, value: Record<string, unknown>, inputs?: unknown) {

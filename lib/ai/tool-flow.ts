@@ -6,8 +6,11 @@ import { getAIClientCacheKey, readAIClientCache, writeAIClientCache, clearAIClie
 import { getProgressiveOptions } from "@/lib/progressive-options";
 import { isCustomStudyInputValid } from "@/components/Tools/CustomOptionInput";
 import { getStructuredResult } from "./structured-output";
+import { trackEvent } from "@/lib/analytics";
+import { saveToolContext } from "@/lib/local-history";
+import { useAuth } from "@/components/auth/AuthGate";
 
-export type StepConfig<T extends string> = {
+type StepConfig<T extends string> = {
   id: T;
   title: string;
   subtitle: string;
@@ -23,6 +26,8 @@ export type ToolFlowConfig<T extends string> = {
 };
 
 export function useToolFlow<T extends string>(config: ToolFlowConfig<T>) {
+  const { user } = useAuth();
+  const userId = user?.id;
   const { steps, aiMode, aiMessage, getInputs, resultKey } = config;
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -34,7 +39,7 @@ export function useToolFlow<T extends string>(config: ToolFlowConfig<T>) {
   const [error, setError] = useState("");
   const [showAllOptions, setShowAllOptions] = useState(false);
   const [hasRestored, setHasRestored] = useState(false);
-  const storageKey = `future-atlas:${aiMode}:draft`;
+  const storageKey = `future-atlas:${aiMode}:draft:${userId || "guest"}`;
 
   const currentStep = steps[currentStepIndex];
   const currentAnswerKey = currentStep.id;
@@ -105,13 +110,15 @@ export function useToolFlow<T extends string>(config: ToolFlowConfig<T>) {
 
       writeAIClientCache(cacheKey, payload);
       setResults(result);
+      trackEvent("tool_result", { mode: aiMode, inputs: getInputs(finalAnswers) });
+      saveToolContext(aiMode, getInputs(finalAnswers), result, userId);
     } catch (err) {
       console.error(`${aiMode} AI error:`, err);
-      setError("We couldn't refresh your AI matches right now. Please try again shortly.");
+      setError(err instanceof Error ? err.message : "We couldn't refresh your AI matches right now. Please try again shortly.");
     } finally {
       setIsLoading(false);
     }
-  }, [aiMode, aiMessage, getInputs, resultKey]);
+  }, [aiMode, aiMessage, getInputs, resultKey, userId]);
 
   const selectOption = useCallback((value: string) => {
     setAnswers(prev => ({ ...prev, [currentAnswerKey]: value }));

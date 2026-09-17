@@ -51,7 +51,7 @@ function getClosestTerm(value: string) {
     .sort((first, second) => first.distance - second.distance)[0];
 }
 
-export function getCustomInputSuggestion(value: string) {
+function getCustomInputSuggestion(value: string) {
   const normalizedValue = normalize(value);
   const closest = getClosestTerm(value);
 
@@ -62,7 +62,7 @@ export function getCustomInputSuggestion(value: string) {
   return closest.term;
 }
 
-export function getCustomInputError(value: string) {
+function getCustomInputError(value: string) {
   const trimmedValue = value.trim();
   const normalizedValue = normalize(trimmedValue);
 

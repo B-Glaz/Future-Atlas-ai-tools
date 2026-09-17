@@ -62,7 +62,7 @@ export default function ScholarshipExplorer() {
   const academic = flow.answers.academic || "";
 
   return (
-    <div className="w-full max-w-5xl">
+    <div className="mx-auto w-full max-w-5xl">
       <div className="mb-4 flex justify-end"><button type="button" onClick={clearSelection} className="text-sm font-medium text-slate-500 transition hover:text-slate-900">Clear Selection</button></div>
       <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
         {!showResults ? (

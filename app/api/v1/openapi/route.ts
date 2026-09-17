@@ -16,12 +16,21 @@ export function GET() {
         post: {
           summary: "Generate a study-abroad AI response",
           security: [{ bearerAuth: [] }],
-          parameters: [{
-            in: "header",
-            name: "Idempotency-Key",
-            required: true,
-            schema: { type: "string", minLength: 8, maxLength: 128 },
-          }],
+          parameters: [
+            {
+              in: "header",
+              name: "Idempotency-Key",
+              required: true,
+              schema: { type: "string", minLength: 8, maxLength: 128 },
+            },
+            {
+              in: "header",
+              name: "Origin",
+              required: true,
+              description: "Exact registered and verified client website origin.",
+              schema: { type: "string", format: "uri" },
+            },
+          ],
           requestBody: {
             required: true,
             content: {

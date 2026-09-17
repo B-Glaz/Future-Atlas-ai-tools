@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { createAdminSupabase, createRequestSupabase } from "@/lib/supabase";
+import { normalizeOrigin } from "@/lib/security/embed-utils";
 
 export const dynamic = "force-dynamic";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -60,8 +61,9 @@ export async function POST(request: NextRequest) {
     if (typeof body.credentialId !== "string" || !UUID.test(body.credentialId)) return reply(requestId, { error: { code: "INVALID_REQUEST", message: "Valid credentialId required.", requestId } }, 400);
     result = await client.rpc("future_atlas_revoke_credential", { p_credential_id: body.credentialId });
   } else if (body.action === "registerDomain") {
-    if (typeof body.tenantId !== "string" || !UUID.test(body.tenantId) || !validText(body.origin, 255)) return reply(requestId, { error: { code: "INVALID_REQUEST", message: "Valid tenantId and origin required.", requestId } }, 400);
-    result = await client.rpc("future_atlas_register_domain", { p_tenant_id: body.tenantId, p_origin: body.origin });
+    const origin = typeof body.origin === "string" ? normalizeOrigin(body.origin) : null;
+    if (typeof body.tenantId !== "string" || !UUID.test(body.tenantId) || !origin) return reply(requestId, { error: { code: "INVALID_REQUEST", message: "Valid tenantId and HTTP(S) origin required.", requestId } }, 400);
+    result = await client.rpc("future_atlas_register_domain", { p_tenant_id: body.tenantId, p_origin: origin });
   } else if (body.action === "removeDomain") {
     if (typeof body.domainId !== "string" || !UUID.test(body.domainId)) return reply(requestId, { error: { code: "INVALID_REQUEST", message: "Valid domainId required.", requestId } }, 400);
     result = await client.rpc("future_atlas_remove_domain", { p_domain_id: body.domainId });
@@ -69,13 +71,14 @@ export async function POST(request: NextRequest) {
     if (typeof body.tenantId !== "string" || !UUID.test(body.tenantId) || (body.status !== "active" && body.status !== "suspended")) return reply(requestId, { error: { code: "INVALID_REQUEST", message: "Valid tenantId and status required.", requestId } }, 400);
     result = await client.rpc("future_atlas_set_tenant_status", { p_tenant_id: body.tenantId, p_status: body.status });
   } else if (body.action === "verifyDomain") {
-    if (typeof body.domainId !== "string" || !UUID.test(body.domainId) || !validText(body.origin, 255) || !validText(body.verificationToken, 150)) {
+    const origin = typeof body.origin === "string" ? normalizeOrigin(body.origin) : null;
+    if (typeof body.domainId !== "string" || !UUID.test(body.domainId) || !origin || !validText(body.verificationToken, 150)) {
       return reply(requestId, { error: { code: "INVALID_REQUEST", message: "Domain verification details required.", requestId } }, 400);
     }
-    const authorization = await client.rpc("future_atlas_can_verify_domain", { p_domain_id: body.domainId, p_origin: body.origin, p_token: body.verificationToken });
+    const authorization = await client.rpc("future_atlas_can_verify_domain", { p_domain_id: body.domainId, p_origin: origin, p_token: body.verificationToken });
     if (authorization.error || authorization.data !== true) return reply(requestId, { error: { code: "DOMAIN_FORBIDDEN", message: "This domain does not belong to your tenant.", requestId } }, 403);
     let hostname: string;
-    try { hostname = new URL(body.origin).hostname; } catch { return reply(requestId, { error: { code: "INVALID_ORIGIN", message: "Valid origin required.", requestId } }, 400); }
+    try { hostname = new URL(origin).hostname; } catch { return reply(requestId, { error: { code: "INVALID_ORIGIN", message: "Valid origin required.", requestId } }, 400); }
     const dns = await fetch("https://cloudflare-dns.com/dns-query?name=" + encodeURIComponent("_future-atlas." + hostname) + "&type=TXT", {
       headers: { Accept: "application/dns-json" },
       signal: AbortSignal.timeout(5_000),
@@ -83,7 +86,7 @@ export async function POST(request: NextRequest) {
     const verified = dns?.Answer?.some((answer) => answer.data?.replace(/^"|"$/g, "") === body.verificationToken);
     if (!verified) return reply(requestId, { error: { code: "DOMAIN_NOT_VERIFIED", message: "Required TXT record was not found.", requestId } }, 409);
     try {
-      result = await createAdminSupabase().rpc("future_atlas_mark_domain_verified", { p_domain_id: body.domainId, p_origin: body.origin, p_token: body.verificationToken });
+      result = await createAdminSupabase().rpc("future_atlas_mark_domain_verified", { p_domain_id: body.domainId, p_origin: origin, p_token: body.verificationToken });
     } catch {
       return reply(requestId, { error: { code: "SERVER_CONFIGURATION_ERROR", message: "Domain verification is not configured.", requestId } }, 503);
     }

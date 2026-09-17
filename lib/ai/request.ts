@@ -1,4 +1,6 @@
-export class AIRequestError extends Error {
+import { supabase } from "@/lib/supabase";
+
+class AIRequestError extends Error {
   retryAfterSeconds?: number;
 
   constructor(message: string, retryAfterSeconds?: number) {
@@ -20,11 +22,13 @@ export async function requestAI<T>(
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const { data } = await supabase.auth.getSession();
     const response = await fetch("/api/ai", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Idempotency-Key": crypto.randomUUID(),
+        ...(data.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {}),
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -42,6 +46,10 @@ export async function requestAI<T>(
 
     if (!payload || typeof payload !== "object") {
       throw new AIRequestError("The AI service returned an empty response.");
+    }
+
+    if (Number.isFinite(payload.creditsRemaining)) {
+      window.dispatchEvent(new CustomEvent("future-atlas:credits", { detail: Math.floor(payload.creditsRemaining) }));
     }
 
     return payload as T;

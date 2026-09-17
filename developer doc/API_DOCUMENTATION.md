@@ -43,12 +43,15 @@ Authorization: Bearer <supabase-user-token>
 POST /api/v1/ai
 Authorization: Bearer fa_test_<secret>
 Idempotency-Key: 7d54130d-9a9e-4a49-a660-91ca5b53d7a1
+Origin: https://approved-client.example
 Content-Type: application/json
 
 {"mode":"country","message":"Recommend destinations","responseFormat":"structured","inputs":{"course":"Pharmacy","budget":"Medium"}}
 ```
 
 Reuse an idempotency key only when retrying the same logical request.
+The exact `Origin` must be registered and verified for the tenant. Server-to-server
+clients must send their approved website origin explicitly; a missing origin is rejected.
 
 ## Domain and iframe
 

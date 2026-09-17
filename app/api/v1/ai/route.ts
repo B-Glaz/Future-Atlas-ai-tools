@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { POST as handleAIRequest } from "../../ai/route";
+import { normalizeOrigin } from "@/lib/security/embed-utils";
 
 export function POST(request: NextRequest) {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
@@ -12,6 +13,12 @@ export function POST(request: NextRequest) {
     return NextResponse.json(
       { error: { code: "FA_INVALID_API_KEY", message: "A tenant API key is required.", retryable: false, requestId } },
       { status: 401, headers: { "X-Request-ID": requestId } }
+    );
+  }
+  if (!normalizeOrigin(request.headers.get("origin") || "")) {
+    return NextResponse.json(
+      { error: { code: "ORIGIN_REQUIRED", message: "Send the approved website Origin header.", retryable: false, requestId } },
+      { status: 403, headers: { "X-Request-ID": requestId } }
     );
   }
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) {

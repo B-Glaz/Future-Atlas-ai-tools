@@ -8,7 +8,7 @@ export default function ZohoGuidanceForm() {
   const [loaded, setLoaded] = useState(false);
 
   return (
-    <div className="relative min-h-[760px] overflow-hidden bg-white">
+    <div className="relative min-h-[1180px] overflow-hidden bg-white">
       {!loaded && (
         <div className="absolute inset-0 z-10 space-y-6 bg-white py-2" aria-label="Loading application form">
           <div className="skeleton-sweep h-8 w-64 rounded bg-slate-200" />
@@ -22,7 +22,7 @@ export default function ZohoGuidanceForm() {
       )}
       <iframe
         aria-label="Future Atlas Contact form"
-        className={`h-[760px] w-full border-0 transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+        className={`h-[1180px] w-full border-0 transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
         onLoad={() => setLoaded(true)}
         referrerPolicy="strict-origin-when-cross-origin"
         src={formUrl}

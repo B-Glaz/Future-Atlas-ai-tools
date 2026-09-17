@@ -9,6 +9,9 @@ import {
   writeAIClientCache,
 } from "@/lib/ai/client-cache";
 import { requestAI } from "@/lib/ai/request";
+import { readToolContext } from "@/lib/local-history";
+import { useAuth } from "@/components/auth/AuthGate";
+import { readDeviceHistory, writeDeviceHistory } from "@/lib/device-history";
 import {
   ArrowRight,
   Bot,
@@ -143,16 +146,30 @@ export default function FutureAtlasAI({
   embedded = false,
 }: FutureAtlasAIProps) {
   const router = useRouter();
+  const { user } = useAuth();
   const config = personality[mode];
-  const storageKey = `future-atlas-ai-${mode}`;
+  const storageKey = `future-atlas-ai-${mode}:${user?.id || "guest"}`;
   const [messages, setMessages] = useState<Message[]>(() =>
     getInitialMessages(config.intro)
   );
+  const [restored, setRestored] = useState(false);
   const nextMessageIdRef = useRef(2);
 
   useEffect(() => {
-    localStorage.removeItem(storageKey);
+    let cancelled = false;
+    let savedMessages: Message[] | null = null;
+    void readDeviceHistory<Message[]>(storageKey).then((saved) => {
+      if (Array.isArray(saved) && saved.length) {
+        savedMessages = saved.slice(-50);
+        nextMessageIdRef.current = Math.max(...saved.map((item: Message) => Number(item.id) || 0), 1) + 1;
+      }
+      if (cancelled) return;
+      if (savedMessages) setMessages(savedMessages);
+      setRestored(true);
+    });
+    return () => { cancelled = true; };
   }, [storageKey]);
+  useEffect(() => { if (restored) void writeDeviceHistory(storageKey, messages.slice(-50)); }, [messages, restored, storageKey]);
   const [input, setInput] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
@@ -226,6 +243,7 @@ export default function FutureAtlasAI({
         mode,
         message,
         history,
+        context: readToolContext(user?.id),
       };
       const cacheKey = getAIClientCacheKey(requestBody);
       const cachedData = readAIClientCache<{ response?: string }>(cacheKey);
@@ -312,7 +330,7 @@ export default function FutureAtlasAI({
   };
 
   return (
-    <div className="flex h-[720px] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_100px_rgba(15,23,42,0.12)]">
+    <div className="flex h-[min(720px,calc(100dvh-2rem))] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_100px_rgba(15,23,42,0.12)]">
 
       {/* HEADER */}
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
