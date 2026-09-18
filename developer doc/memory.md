@@ -153,3 +153,13 @@ Incomplete verification:
 - Do not add fake exact study-abroad facts.
 - Preserve exact-origin tenant authorization and iframe CSP.
 - Update this file after material architecture, deployment, auth, credit, provider, schema, or route changes.
+
+## 2026-09-18 Auth and Guidance Update
+
+- Added `app/api/auth/otp/route.ts`. The UI now requests OTP through the server route instead of calling Supabase Auth directly.
+- OTP requests are capped at 10 per email/IP key per rolling hour. With `SUPABASE_SECRET_KEY`, the durable private rate-limit table is used; local development falls back to an in-process limiter.
+- Added `app/api/guidance/route.ts`. It validates and stores native guidance form submissions server-side.
+- Replaced the Zoho iframe UI with a native Future Atlas form in `components/ZohoGuidanceForm.tsx`. No submitted form data is stored in browser storage.
+- Added and applied `supabase/migrations/20260918_future_atlas_guidance_otp.sql`.
+- Verified live tables: `public.future_atlas_guidance_submissions` and `private.future_atlas_otp_rate_limits`. Submission count was 0 at verification time.
+- Hosted Supabase email template still requires dashboard configuration: subject `Future Atlas Login OTP`; body must include `{{ .Token }}` and instructions to enter the six-digit code. If it contains only `{{ .ConfirmationURL }}`, Supabase sends a magic link.

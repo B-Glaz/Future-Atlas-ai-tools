@@ -153,12 +153,14 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
     }
 
     if (step === "email") {
-      const { error: sendError } = await withAuthTimeout(supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: { shouldCreateUser: true, data: { full_name: name.trim() } },
+      const response = await withAuthTimeout(fetch("/api/auth/otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), name: name.trim() }),
       }));
+      const payload = await response.json().catch(() => ({}));
       setBusy(false);
-      if (sendError) return setError(sendError.message);
+      if (!response.ok) return setError(payload.error || "We could not send the OTP. Please try again.");
       setStep("otp");
       return;
     }
@@ -210,7 +212,7 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
         <button type="button" onClick={onClose} className="float-right grid h-9 w-9 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close"><X size={17} /></button>
         <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-white"><LockKeyhole size={20} /></div>
         <h2 className="text-xl font-semibold text-slate-900">{step === "otp" ? "Check your email" : "Continue to your tools"}</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-500">{step === "otp" ? `Enter the six-digit code sent to ${email}.` : "Sign in or create an account to continue."}</p>
+        <p className="mt-2 text-sm leading-6 text-slate-500">{step === "otp" ? `Enter the six-digit Future Atlas Login OTP sent to ${email}. It expires shortly and can be used once.` : "Sign in or create an account to continue."}</p>
         <form onSubmit={submit} className="mt-5 space-y-4">
           {step !== "otp" ? <>
             <input value={name} onChange={(event) => setName(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-3 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100" placeholder="Your name" autoComplete="name" />
