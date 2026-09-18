@@ -19,7 +19,7 @@ Routes: `/`, `/countries`, `/universities`, `/scholarships`, `/cost-calculator`,
 - `npm run cf:build`: passed; `.open-next/worker.js` generated.
 - Browser verified: homepage, consent Details, Necessary-only path, Privacy reopen control, all eight page routes, guidance iframe render, restricted `/embed`, auth gate dialog, University navigation, 4 + More layout, and clean console. Authenticated result submissions still need live Supabase OTP/session configuration.
 - Real NVIDIA structured calls succeeded for all five tool modes.
-- Current edits are not deployed. Production status after this work: **Needs Verification**. Cloudflare's failed deploy used dashboard build command `npm run build` followed by `npx wrangler deploy`; that creates `.next` but not `.open-next`, so OpenNext deploy failed. The required Cloudflare build command is `npm run cf:build`; `wrangler.jsonc` already declares it. Local `npm run cf:build` now passes and writes `.open-next/worker.js`.
+- Current edits are not deployed. Production status after this work: **Needs Verification**. Cloudflare's failed deploy used dashboard build command `npm run build` followed by `npx wrangler deploy`; that creates `.next` but not `.open-next`, so OpenNext deploy failed. The required Cloudflare build command is `npm run cf:build`; `wrangler.jsonc` already declares it. Local OpenNext build and preview now pass: `/` 200, `/api/v1/health` 200, `/api/v1/openapi` 200. Cloudflare dashboard settings still need the build command changed; no deployment was run.
 
 ## Authentication And Credits
 
