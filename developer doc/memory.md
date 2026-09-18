@@ -19,7 +19,7 @@ Routes: `/`, `/countries`, `/universities`, `/scholarships`, `/cost-calculator`,
 - `npm run cf:build`: passed; `.open-next/worker.js` generated.
 - Browser verified: homepage, consent Details, Necessary-only path, Privacy reopen control, all eight page routes, guidance iframe render, restricted `/embed`, auth gate dialog, University navigation, 4 + More layout, and clean console. Authenticated result submissions still need live Supabase OTP/session configuration.
 - Real NVIDIA structured calls succeeded for all five tool modes.
-- Current edits are not deployed. Production status after this work: **Needs Verification**.
+- Current edits are not deployed. Production status after this work: **Needs Verification**. Cloudflare's failed deploy used dashboard build command `npm run build` followed by `npx wrangler deploy`; that creates `.next` but not `.open-next`, so OpenNext deploy failed. The required Cloudflare build command is `npm run cf:build`; `wrangler.jsonc` already declares it. Local `npm run cf:build` now passes and writes `.open-next/worker.js`.
 
 ## Authentication And Credits
 
@@ -47,7 +47,7 @@ Base URL: `https://future-atlas-ai.onewindowvcard.workers.dev/api/v1`. OpenAPI: 
 
 ## Consent, History, Forms, And UI
 
-`components/ConsentManager.tsx` implements mandatory Necessary consent and optional Additional consent. Accept enables both; Reject explains Necessary and permits Necessary-only continuation; Details describes both. A permanent Privacy control reopens choices, consent stores a version/timestamp, and Global Privacy Control recommends Necessary-only. Zoho PageSense loads only after Additional consent. Allowlisted events post through `/api/events`; the migration creates RLS-protected `future_atlas_events` with 13-month expiry metadata. A restricted cleanup function exists, but no scheduled cleanup job is configured.
+`components/ConsentManager.tsx` implements mandatory Necessary consent and optional Additional consent. Accept enables both; Reject explains Necessary and permits Necessary-only continuation; Details describes both. A permanent Privacy control reopens choices, consent stores a version/timestamp, and Global Privacy Control recommends Necessary-only. Zoho PageSense loads only after Additional consent. Allowlisted events post through `/api/events`; the route treats analytics storage as optional, returns `204` when the server secret/table is unavailable, and logs only the database error code. The migration creates RLS-protected `future_atlas_events` with 13-month expiry metadata. A restricted cleanup function exists, but no scheduled cleanup job is configured.
 
 Device storage is account-scoped and keeps consent, anonymous ID, tool drafts, up to 8 compact contexts, and up to 50 IndexedDB chat/history entries. The mentor receives only the last 3 contexts capped at 4,000 characters. `POST /api/account` provides explicit opt-in backup; logout never uploads history. `DELETE /api/account` removes application data and the authenticated Supabase user after migration. Third-party advertising-profile collection is not implemented without a lawful, specific data contract and explicit purpose.
 
