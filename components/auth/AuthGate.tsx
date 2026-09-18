@@ -18,14 +18,22 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const AUTH_TIMEOUT_MS = 15_000;
+const withAuthTimeout = <T,>(operation: PromiseLike<T>) => Promise.race([
+  Promise.resolve(operation),
+  new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Authentication timed out. Please try again.")), AUTH_TIMEOUT_MS)),
+]);
+const localDevName = process.env.NEXT_PUBLIC_LOCAL_DEV_USER_NAME;
+const localDevEmail = process.env.NEXT_PUBLIC_LOCAL_DEV_USER_EMAIL;
+const localDevPassword = process.env.NEXT_PUBLIC_LOCAL_DEV_USER_PASSWORD;
 const localDeveloper = {
   id: "local-developer",
   aud: "authenticated",
   role: "authenticated",
-  email: process.env.NEXT_PUBLIC_LOCAL_DEV_USER_EMAIL || "developer@example.com",
+  email: localDevEmail,
   email_confirmed_at: new Date(0).toISOString(),
   app_metadata: { provider: "password", providers: ["password"] },
-  user_metadata: { full_name: process.env.NEXT_PUBLIC_LOCAL_DEV_USER_NAME || "Local Developer" },
+  user_metadata: { full_name: localDevName },
   identities: [],
   created_at: new Date(0).toISOString(),
   updated_at: new Date(0).toISOString(),
@@ -129,16 +137,15 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
     event.preventDefault();
     setBusy(true);
     setError("");
+    try {
 
     if (step === "password") {
-      const expectedEmail = process.env.NEXT_PUBLIC_LOCAL_DEV_USER_EMAIL || "developer@example.com";
-      const expectedPassword = process.env.NEXT_PUBLIC_LOCAL_DEV_USER_PASSWORD || "FutureAtlasDev2026!";
-      if (localHost && email.trim().toLowerCase() === expectedEmail.toLowerCase() && password === expectedPassword) {
+      if (localHost && localDevEmail && localDevPassword && email.trim().toLowerCase() === localDevEmail.toLowerCase() && password === localDevPassword) {
         setBusy(false);
         onVerified(localDeveloper);
         return;
       }
-      const { data, error: passwordError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      const { data, error: passwordError } = await withAuthTimeout(supabase.auth.signInWithPassword({ email: email.trim(), password }));
       setBusy(false);
       if (passwordError || !data.user) return setError(passwordError?.message || "Local sign-in failed.");
       onVerified(data.user);
@@ -146,21 +153,21 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
     }
 
     if (step === "email") {
-      const { error: sendError } = await supabase.auth.signInWithOtp({
+      const { error: sendError } = await withAuthTimeout(supabase.auth.signInWithOtp({
         email: email.trim(),
         options: { shouldCreateUser: true, data: { full_name: name.trim() } },
-      });
+      }));
       setBusy(false);
       if (sendError) return setError(sendError.message);
       setStep("otp");
       return;
     }
 
-    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+    const { data, error: verifyError } = await withAuthTimeout(supabase.auth.verifyOtp({
       email: email.trim(),
       token: otp.trim(),
       type: "email",
-    });
+    }));
 
     if (verifyError || !data.user) {
       setBusy(false);
@@ -176,15 +183,24 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
     setBusy(false);
     if (profileError) return setError("Account verified, but profile setup failed. Please try again.");
     onVerified(data.user);
+    } catch (caught) {
+      setBusy(false);
+      setError(caught instanceof Error ? caught.message : "Authentication failed. Please try again.");
+    }
   }
 
   async function signInWithGoogle() {
     setBusy(true);
     setError("");
-    const { error: googleError } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href } });
-    if (googleError) {
+    try {
+      const { data, error: googleError } = await withAuthTimeout(supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href, skipBrowserRedirect: true } }));
+      if (googleError) throw googleError;
+      if (!data.url) throw new Error("Google login is unavailable.");
       setBusy(false);
-      setError(googleError.message);
+      window.location.assign(data.url);
+    } catch (googleError) {
+      setBusy(false);
+      setError(googleError instanceof Error ? googleError.message : "Google login failed.");
     }
   }
 
@@ -207,7 +223,7 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
             {step === "email" ? "Email me a code" : step === "password" ? "Sign in locally" : "Verify and continue"}
           </button>
           {step === "email" && <button type="button" onClick={signInWithGoogle} disabled={busy} className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Continue with Google</button>}
-          {localHost && step !== "otp" && <button type="button" onClick={() => { const next = step === "password" ? "email" : "password"; setStep(next); if (next === "password") { setName(process.env.NEXT_PUBLIC_LOCAL_DEV_USER_NAME || "Local Developer"); setEmail(process.env.NEXT_PUBLIC_LOCAL_DEV_USER_EMAIL || "developer@example.com"); } }} className="w-full text-xs font-medium text-slate-500 hover:text-slate-900">{step === "password" ? "Use email OTP" : "Developer password login"}</button>}
+          {localHost && localDevEmail && localDevPassword && step !== "otp" && <button type="button" onClick={() => { const next = step === "password" ? "email" : "password"; setStep(next); if (next === "password") { setName(localDevName || "Local Developer"); setEmail(localDevEmail); } }} className="w-full text-xs font-medium text-slate-500 hover:text-slate-900">{step === "password" ? "Use email OTP" : "Developer password login"}</button>}
         </form>
       </div>
     </div>

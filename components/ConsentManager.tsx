@@ -3,7 +3,7 @@
 import Script from "next/script";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { trackEvent } from "@/lib/analytics";
+import { recordConsent, trackEvent } from "@/lib/analytics";
 
 type Consent = "necessary" | "additional" | null;
 const CONSENT_VERSION = 1;
@@ -27,6 +27,7 @@ export default function ConsentManager() {
     localStorage.setItem("future-atlas:consent", value);
     localStorage.setItem("future-atlas:consent-meta", JSON.stringify({ version: CONSENT_VERSION, decidedAt: new Date().toISOString() }));
     setConsent(value);
+    void recordConsent(value);
   }
   function reopen() { setDetails(true); setRejected(false); setConsent(null); }
   return <>

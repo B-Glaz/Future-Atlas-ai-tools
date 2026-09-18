@@ -26,13 +26,15 @@ function getDistance(a: string, b: string) {
   const costs = Array.from({ length: b.length + 1 }, (_, index) => index);
 
   for (let i = 1; i <= a.length; i += 1) {
-    let previous = i;
+    let previous = costs[0];
+    costs[0] = i;
     for (let j = 1; j <= b.length; j += 1) {
       const current = costs[j];
-      costs[j] = a[i - 1] === b[j - 1] ? costs[j - 1] : Math.min(costs[j - 1], previous, costs[j]) + 1;
+      costs[j] = a[i - 1] === b[j - 1]
+        ? previous
+        : Math.min(costs[j - 1], costs[j], previous) + 1;
       previous = current;
     }
-    costs[0] = i;
   }
 
   return costs[b.length];

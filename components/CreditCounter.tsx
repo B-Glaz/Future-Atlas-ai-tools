@@ -12,13 +12,17 @@ export default function CreditCounter() {
   useEffect(() => {
     if (!user) return;
     const update = (event: Event) => {
-      setRemaining(Math.floor((event as CustomEvent<number>).detail));
+      const next = Math.floor((event as CustomEvent<number>).detail);
+      if (user.id === "local-developer") sessionStorage.setItem("future-atlas:dev-credits", String(next));
+      setRemaining(next);
       setStatus("ready");
     };
     window.addEventListener("future-atlas:credits", update);
     if (user.id === "local-developer") {
-      Promise.resolve().then(() => { setRemaining(30); setStatus("ready"); });
-      return () => window.removeEventListener("future_atlas:credits", update);
+      const stored = sessionStorage.getItem("future-atlas:dev-credits");
+      const saved = stored === null ? 30 : Number(stored);
+      Promise.resolve().then(() => { setRemaining(Number.isFinite(saved) && saved >= 0 ? saved : 30); setStatus("ready"); });
+      return () => window.removeEventListener("future-atlas:credits", update);
     }
     supabase.auth.getSession().then(async ({ data }) => {
       if (!data.session) {

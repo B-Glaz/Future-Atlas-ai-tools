@@ -130,12 +130,15 @@ const unrelatedSignals = [
   "crypto",
   "dating",
   "diet",
+  "football",
   "football score",
   "game cheat",
   "movie",
   "politics",
   "recipe",
+  "soccer",
   "stock",
+  "cricket",
   "weather",
 ];
 
