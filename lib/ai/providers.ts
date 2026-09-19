@@ -15,7 +15,7 @@ type Provider = {
   extraBody?: Record<string, unknown>;
 };
 
-const PROVIDER_TIMEOUT_MS = 25_000;
+const PROVIDER_TIMEOUT_MS = 120_000;
 type ProviderHealth = { failures: number; blockedUntil: number };
 const providerHealth = ((globalThis as typeof globalThis & { futureAtlasProviderHealth?: Map<string, ProviderHealth> }).futureAtlasProviderHealth ??= new Map());
 
@@ -64,7 +64,6 @@ function configuredProviders(): Provider[] {
   const maxAttempts = Math.max(1, Math.min(3, Number(process.env.AI_MAX_PROVIDER_ATTEMPTS) || 2));
   const configured = order.map((name) => providers[name]).filter((provider): provider is Provider => Boolean(provider));
   if (!configured.length) throw new Error("No AI provider is configured.");
-  while (configured.length < maxAttempts) configured.push(configured[0]);
   return configured.slice(0, maxAttempts);
 }
 

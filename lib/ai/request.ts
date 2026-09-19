@@ -16,7 +16,7 @@ type AIRequestOptions = {
 
 export async function requestAI<T>(
   body: Record<string, unknown>,
-  { timeoutMs = 55_000 }: AIRequestOptions = {}
+  { timeoutMs = 125_000 }: AIRequestOptions = {}
 ): Promise<T> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);

@@ -142,7 +142,7 @@ page.tsx → ProtectedTool → ToolComponent + GuidanceCTA
 - `useAuth()`: Hook to access context
 - `ProtectedTool`: Wrapper that shows skeleton → sign-in prompt → children
 - `AuthDialog`: Two-step modal (email → OTP verification)
-  - Step 1: Collect name + email → `signInWithOtp(shouldCreateUser: true)`
+  - Google Identity Services obtains an ID token; Supabase verifies it through `signInWithIdToken`.
   - Step 2: Verify OTP → upsert profile → `onVerified()` → redirect to destination
 
 ### Session Persistence

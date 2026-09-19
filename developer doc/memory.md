@@ -1,6 +1,6 @@
 # Future Atlas AI - Project Memory
 
-Last verified: 2026-09-18 (Asia/Kolkata)
+Last verified: 2026-09-19 (Asia/Kolkata)
 
 ## Product
 
@@ -12,7 +12,7 @@ API routes: `/api/ai`, `/api/account`, `/api/consent`, `/api/credits`, `/api/eve
 
 Repository: https://github.com/B-Glaz/Future-Atlas-ai-tools.git
 
-Reported production URL: https://future-atlas-ai.onewindowvcard.workers.dev/ (current deployment needs verification).
+Production URL: https://future-atlas-ai-tools.onewindowvcard.workers.dev/
 
 ## Stack
 
@@ -28,11 +28,9 @@ Reported production URL: https://future-atlas-ai.onewindowvcard.workers.dev/ (cu
 Authentication is active for tool pages. The homepage remains explorable. Clicking a tool or the credit sign-in control opens `components/auth/AuthGate.tsx`.
 
 Auth options:
-- Email OTP entry through Supabase Auth.
 - Google Identity Services button exchanging Google's ID token through Supabase `signInWithIdToken`.
-- Localhost-only developer password login, enabled only when all three local developer environment variables exist.
 
-The Google control renders locally. A complete real Google sign-in is **Needs Verification** and requires the same web client ID plus its client secret in the Supabase Google provider, and authorized JavaScript origins in Google Cloud. Real email OTP delivery is **Needs Verification** because no controlled inbox was used in the latest test.
+Google-only authentication was verified locally and in production with `blessononewindow@gmail.com`. Google is enabled and Email is disabled in the active Supabase project.
 
 Credits:
 - 30 credits reset at Asia/Kolkata midnight.
@@ -40,7 +38,6 @@ Credits:
 - Chat generation costs 0.25, 0.5, 0.75, or 1 credit.
 - UI displays a whole-number remaining balance.
 - Failed requests, history review, cache hits, duplicate reuse, and deterministic scope redirects cost zero.
-- Local developer balance persists for the browser session.
 - Signed-in balances use Supabase and persist across logout/login.
 - Guest admission remains in-memory and is not suitable as durable high-volume abuse protection.
 
@@ -48,6 +45,7 @@ AI:
 - Provider configuration is modular in `lib/ai/providers.ts`.
 - Provider order, attempts, timeouts, circuit pause, response validation, in-flight deduplication, caching, and structured normalization are implemented.
 - Provider clients are created at request time; missing secrets do not break builds.
+- A single configured provider is attempted once. NVIDIA has a 120-second server timeout and the browser waits 125 seconds; this avoids the former duplicate 25-second retry and premature client abort. Typical observed NVIDIA latency is roughly 43-90 seconds, so a faster second provider is still desirable.
 - The mentor only answers study-abroad topics. Clear unrelated prompts return the exact required redirect without invoking AI or charging credit.
 - No live web search exists. Exact current fees, rankings, deadlines, visa rules, and scholarship amounts must be verified with official sources.
 
@@ -84,7 +82,7 @@ Tenant API and embedding:
 
 ## Database
 
-Supabase project ID: `nfcixmyfqhpenbocplaa`.
+Active Supabase project ID: `qkxrzieifutndosqjzsh`. Treat deployment variables as source of truth; the older `nfcixmyfqhpenbocplaa` project is not used by the application.
 
 Applied and live-verified on 2026-09-18:
 - `supabase/migrations/20260917_future_atlas_user_credit_quarters.sql`
@@ -100,7 +98,7 @@ Never commit values. See `.env.example`.
 
 - AI: `AI_ENABLED`, `AI_DISABLED_MODES`, `AI_PROVIDER_ORDER`, `AI_MAX_PROVIDER_ATTEMPTS`, generic `AI_*`, `NVIDIA_API_KEY`, `NVIDIA_MODEL`, optional OpenRouter/OpenAI/DeepSeek keys and models.
 - Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, server-only `SUPABASE_SECRET_KEY`.
-- Local auth: `NEXT_PUBLIC_LOCAL_DEV_USER_NAME`, `NEXT_PUBLIC_LOCAL_DEV_USER_EMAIL`, `NEXT_PUBLIC_LOCAL_DEV_USER_PASSWORD`. Local-only convenience, not privileged server authentication.
+- Google Auth: `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is public and compiled into the browser; keep the matching client secret only in Supabase Auth provider settings.
 - Embed/security: `EMBED_ALLOWED_ORIGINS`, `SECURITY_ALERT_EMAIL`, `SECURITY_ALERT_WEBHOOK_URL`, `SECURITY_ALERT_COOLDOWN_SECONDS`.
 - UI: `NEXT_PUBLIC_FORUM_URL`.
 - Sentry is not configured locally. Inspection requires `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT`; never place the token in source.
@@ -117,33 +115,45 @@ Scripts:
 
 Cloudflare must run an OpenNext-producing build before deployment. Do not run only `next build` and then expect `.open-next` to exist.
 
-## Verification - 2026-09-18
+Current production deployment (2026-09-19):
+- Worker: `future-atlas-ai-tools`
+- Version: `2baecf27-3a63-4604-8e02-b9ee1865d178`
+- URL: https://future-atlas-ai-tools.onewindowvcard.workers.dev/
+- Bound secret names verified with Wrangler: `NVIDIA_API_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+- `SUPABASE_SECRET_KEY` is not bound. Auth works through the public Supabase configuration, but server-only event, consent, guidance persistence, account backup, and tenant administration remain limited until that secret is configured.
+
+## Verification - 2026-09-19
 
 Passed:
 - `npm test` structured-output and provider-fallback contracts.
 - `npm run lint`.
 - `npm run build` with all application/API routes compiled.
 - `npm run cf:build`; `.open-next/worker.js` generated.
-- Browser: homepage, developer login, logout dialog, persistent local credits, all five AI tools, eligibility mentor, mode dropdown, typo correction, exact unrelated-topic redirect, consent controls, Zoho form visibility/input, and denied `/embed`.
+- Browser: homepage, Google-only login, live credit counter, logout dialog, all five AI tools, eligibility mentor, mode dropdown, typo correction, exact unrelated-topic redirect, consent controls, native guidance form visibility/input, and denied `/embed`.
 - API: health 200, malformed AI 400, unauthenticated credits/account/tenant management 401, missing tenant key 401, valid local event ingestion 204, OpenAPI 200.
 
 Observed AI outputs were input-specific for countries, universities, scholarships, costs, and eligibility. University results did not repeat duplicate keys or invent exact rankings in the tested flow.
 
+Production browser verification on 2026-09-19:
+- Google login completed with `blessononewindow@gmail.com`.
+- The header showed 30 credits after login.
+- Country Explorer generated three input-specific results through NVIDIA.
+- The balance changed from 30 to 29 only after the successful result. Two timed-out attempts consumed no credit.
+- Email OTP, email magic-link, and local-password login UI/routes are absent.
+
 Incomplete verification:
-- Production Cloudflare deployment was not performed.
 - Sentry query was blocked because Sentry credentials are not configured locally.
 - Codex Security Deep Scan stopped with: `Your workspace is out of credits. Add credits to continue.` Coverage is incomplete; no successful findings manifest was returned.
-- Real OTP delivery, Google callback, Zoho submission, production event persistence, tenant API key flow, tenant domain approval, and Asia/Kolkata midnight reset need controlled integration tests.
+- Real guidance submission, production event/consent persistence, tenant API key flow, tenant domain approval, and Asia/Kolkata midnight reset need controlled integration tests.
 
 ## Known Limits / Next Work
 
 1. Add Cloudflare production secrets, especially `SUPABASE_SECRET_KEY`, then verify events and consent persistence.
-2. Configure/verify the Supabase Google provider with the current web client ID and its secret; authorize localhost and the production origin in Google Cloud. Rotate any Google secret previously exposed outside the secret store.
-3. Test OTP using a controlled inbox.
-4. Test tenant API and domain authorization with a real sandbox tenant key.
-5. Replace guest in-memory throttling with shared durable storage before bulk anonymous traffic.
-6. Configure Sentry variables and rerun error inspection; restore Codex Security credits and rerun the deep scan.
-7. Verify the next Cloudflare production deployment and live health/AI endpoints.
+2. Add a faster server-side AI provider/key as fallback; NVIDIA is reliable with the corrected timeout but remains slow.
+3. Test tenant API and domain authorization with a real sandbox tenant key.
+4. Replace guest in-memory throttling with shared durable storage before bulk anonymous traffic.
+5. Configure Sentry variables and rerun error inspection; restore Codex Security credits and rerun the deep scan.
+6. Re-run production persistence tests after binding `SUPABASE_SECRET_KEY`.
 
 ## Development Rules
 
@@ -156,15 +166,15 @@ Incomplete verification:
 
 ## 2026-09-18 Auth and Guidance Update
 
-- Added `app/api/auth/otp/route.ts`. The UI now requests OTP through the server route instead of calling Supabase Auth directly.
-- OTP requests are capped at 10 per email/IP key per rolling hour. With `SUPABASE_SECRET_KEY`, the durable private rate-limit table is used; local development falls back to an in-process limiter.
+- Email OTP and local password login were removed on 2026-09-19. Google Identity Services is the only active login flow.
 - Added `app/api/guidance/route.ts`. It validates and stores native guidance form submissions server-side.
 - Replaced the Zoho iframe UI with a native Future Atlas form in `components/ZohoGuidanceForm.tsx`. No submitted form data is stored in browser storage.
 - Added and applied `supabase/migrations/20260918_future_atlas_guidance_otp.sql`.
 - Verified live tables: `public.future_atlas_guidance_submissions` and `private.future_atlas_otp_rate_limits`. Submission count was 0 at verification time.
-- Hosted Supabase email template still requires dashboard configuration: subject `Future Atlas Login OTP`; body must include `{{ .Token }}` and instructions to enter the six-digit code. If it contains only `{{ .ConfirmationURL }}`, Supabase sends a magic link.
 
-## Live Deployment Audit - 2026-09-18
+## Historical Live Deployment Audit - 2026-09-18
+
+This section records the previous deployment state and is superseded by the 2026-09-19 deployment notes above.
 
 Live URL tested: `https://future-atlas-ai-tools.onewindowvcard.workers.dev/`.
 
