@@ -1,26 +1,26 @@
 {
-  // existing config...
-
-  "vars": {},
-
-  // existing config...
-}
-
-{
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "future-atlas-ai-tools",
   "main": "custom-worker.mjs",
   "compatibility_date": "2026-09-15",
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+
   "build": {
     "command": "npm run cf:build"
   },
+
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
-  }
+  },
+
+  "vars": {}
 }
