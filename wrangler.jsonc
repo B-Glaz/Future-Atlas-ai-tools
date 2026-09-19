@@ -1,4 +1,12 @@
 {
+  // existing config...
+
+  "vars": {},
+
+  // existing config...
+}
+
+{
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "future-atlas-ai-tools",
   "main": "custom-worker.mjs",
