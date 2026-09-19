@@ -2,6 +2,15 @@
 
 Last verified: 2026-09-19 (Asia/Kolkata)
 
+## 2026-09-19 Database and configuration update
+
+- Applied all four existing migrations plus `supabase/migrations/20260919_enable_otp_rate_limit_rls.sql` to project `qkxrzieifutndosqjzsh`.
+- Live tables now exist for profiles, credits, events, consent, guidance, history, tenant API data, and OTP rate limits.
+- Enabled RLS on `private.future_atlas_otp_rate_limits`.
+- `wrangler.jsonc` now contains an empty top-level `vars` object. Secrets remain Cloudflare secrets.
+- Removed hardcoded Supabase URL/key fallbacks from `lib/supabase.ts`; missing runtime configuration now fails closed.
+- Local `npm run lint` passes. A later `npm run build` was blocked by another process locking `.next/trace`; stop the running Next.js process before rebuilding.
+
 ## Product
 
 Future Atlas AI is a study-abroad planning application with five AI tools, a study-abroad mentor, Supabase authentication and account credits, a tenant API, controlled iframe embedding, consent analytics, and a Zoho guidance form.
@@ -69,9 +78,9 @@ Consent and analytics:
 - Device history is account-scoped. Explicit backup uses `/api/account`; logout without backup does not upload it.
 
 Guidance:
-- `/guidance` renders the existing Zoho form directly in a styled page.
+- `/guidance` renders the supplied Zoho public form directly in a styled, rounded iframe. Zoho now owns field input and final submission; the app no longer attempts a cross-origin prefill bridge.
 - The unreliable cross-origin loading overlay was removed because it could hide an already-loaded form forever.
-- Fields were browser-tested for input. A real Zoho submission was not sent during testing.
+- Fields were browser-tested for input. Marked QA submissions were sent through the deployed native form API on 2026-09-19; it returned 200, persisted in Supabase, and returned a prefilled Zoho public-form URL using verified field names. The user must complete the final Zoho submit action; no private Zoho API credentials are configured.
 
 Tenant API and embedding:
 - `/api/v1/openapi` serves OpenAPI 3.1 documentation.
@@ -120,7 +129,15 @@ Current production deployment (2026-09-19):
 - Version: `2baecf27-3a63-4604-8e02-b9ee1865d178`
 - URL: https://future-atlas-ai-tools.onewindowvcard.workers.dev/
 - Bound secret names verified with Wrangler: `NVIDIA_API_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
-- `SUPABASE_SECRET_KEY` is not bound. Auth works through the public Supabase configuration, but server-only event, consent, guidance persistence, account backup, and tenant administration remain limited until that secret is configured.
+- Bound server secret `SUPABASE_SECRET_KEY` is now verified. Server event, consent, guidance persistence, account backup, and tenant administration can use Supabase.
+- Latest deployment after database/configuration fixes: `95a8a8b2-de33-41b9-bb38-a4c9a3b0acad`.
+- Latest production deployment for native-form Zoho handoff: `8dd68f60-18e2-4856-9903-7ff02b0de1ae`.
+- Latest production deployment for direct Zoho iframe input: `3e614ba4-275f-407c-8d66-821005a6cca5`.
+- Separate sandbox Supabase project created: `winaoavaimwkozrlozfw` (`Future Atlas Sandbox`, `ap-south-1`); all application migrations applied.
+- Separate sandbox Wrangler config prepared in `wrangler.sandbox.jsonc` for Worker `future-atlas-ai-tools-sandbox`.
+- Sandbox deployment verified: `https://future-atlas-ai-tools-sandbox.onewindowvcard.workers.dev/`, version `52e65ea6-25d4-44ad-9616-db43e8f859fe`.
+- Sandbox `SUPABASE_SECRET_KEY` and `NVIDIA_API_KEY` are bound as Wrangler secrets; values are intentionally omitted.
+- Sandbox Supabase Google provider is enabled. The dashboard still shows the Email provider enabled and must be disabled manually if Google-only authentication is required in sandbox; production remains Google-only.
 
 ## Verification - 2026-09-19
 
@@ -131,6 +148,7 @@ Passed:
 - `npm run cf:build`; `.open-next/worker.js` generated.
 - Browser: homepage, Google-only login, live credit counter, logout dialog, all five AI tools, eligibility mentor, mode dropdown, typo correction, exact unrelated-topic redirect, consent controls, native guidance form visibility/input, and denied `/embed`.
 - API: health 200, malformed AI 400, unauthenticated credits/account/tenant management 401, missing tenant key 401, valid local event ingestion 204, OpenAPI 200.
+- Sandbox live smoke checks: `/api/v1/health` 200 with database and AI configured; `/api/v1/openapi` 200; unauthenticated `/api/credits` 401.
 
 Observed AI outputs were input-specific for countries, universities, scholarships, costs, and eligibility. University results did not repeat duplicate keys or invent exact rankings in the tested flow.
 
@@ -144,7 +162,7 @@ Production browser verification on 2026-09-19:
 Incomplete verification:
 - Sentry query was blocked because Sentry credentials are not configured locally.
 - Codex Security Deep Scan stopped with: `Your workspace is out of credits. Add credits to continue.` Coverage is incomplete; no successful findings manifest was returned.
-- Real guidance submission, production event/consent persistence, tenant API key flow, tenant domain approval, and Asia/Kolkata midnight reset need controlled integration tests.
+- Production event/consent persistence, tenant API key flow, tenant domain approval, and Asia/Kolkata midnight reset need controlled integration tests.
 
 ## Known Limits / Next Work
 

@@ -2,7 +2,9 @@
 
 ## Base URLs
 
-Current base URL: `https://future-atlas-ai.onewindowvcard.workers.dev/api/v1`.
+Production base URL: `https://future-atlas-ai-tools.onewindowvcard.workers.dev/api/v1`.
+Sandbox base URL: `https://future-atlas-ai-tools-sandbox.onewindowvcard.workers.dev/api/v1`.
+Sandbox Supabase project: `winaoavaimwkozrlozfw` (`Future Atlas Sandbox`).
 OpenAPI is available at `/api/v1/openapi`; provider-free readiness is `/api/v1/health`.
 Sandbox and production use separate tenant records and `fa_test_` / `fa_live_` credentials, so test requests and usage never share a tenant identity with production.
 
