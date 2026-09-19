@@ -29,10 +29,10 @@ Authentication is active for tool pages. The homepage remains explorable. Clicki
 
 Auth options:
 - Email OTP entry through Supabase Auth.
-- Google OAuth through Supabase-generated PKCE authorization URL.
+- Google Identity Services button exchanging Google's ID token through Supabase `signInWithIdToken`.
 - Localhost-only developer password login, enabled only when all three local developer environment variables exist.
 
-Google provider configuration and a complete real Google callback are **Needs Verification**. Real email OTP delivery is **Needs Verification** because no controlled inbox was used in the latest test.
+The Google control renders locally. A complete real Google sign-in is **Needs Verification** and requires the same web client ID plus its client secret in the Supabase Google provider, and authorized JavaScript origins in Google Cloud. Real email OTP delivery is **Needs Verification** because no controlled inbox was used in the latest test.
 
 Credits:
 - 30 credits reset at Asia/Kolkata midnight.
@@ -138,7 +138,7 @@ Incomplete verification:
 ## Known Limits / Next Work
 
 1. Add Cloudflare production secrets, especially `SUPABASE_SECRET_KEY`, then verify events and consent persistence.
-2. Configure/verify Supabase Google provider and callback URLs. Rotate any Google secret previously exposed outside the secret store.
+2. Configure/verify the Supabase Google provider with the current web client ID and its secret; authorize localhost and the production origin in Google Cloud. Rotate any Google secret previously exposed outside the secret store.
 3. Test OTP using a controlled inbox.
 4. Test tenant API and domain authorization with a real sandbox tenant key.
 5. Replace guest in-memory throttling with shared durable storage before bulk anonymous traffic.
@@ -163,3 +163,22 @@ Incomplete verification:
 - Added and applied `supabase/migrations/20260918_future_atlas_guidance_otp.sql`.
 - Verified live tables: `public.future_atlas_guidance_submissions` and `private.future_atlas_otp_rate_limits`. Submission count was 0 at verification time.
 - Hosted Supabase email template still requires dashboard configuration: subject `Future Atlas Login OTP`; body must include `{{ .Token }}` and instructions to enter the six-digit code. If it contains only `{{ .ConfirmationURL }}`, Supabase sends a magic link.
+
+## Live Deployment Audit - 2026-09-18
+
+Live URL tested: `https://future-atlas-ai-tools.onewindowvcard.workers.dev/`.
+
+Passed live checks:
+- Homepage and all user routes loaded.
+- Navigation/header/home link and guidance route loaded.
+- Native guidance fields, required-field browser validation, dropdown, responsive layout, and access-restricted `/embed`.
+- OTP invalid-input validation returned 400.
+- The former redirect-based Google OAuth implementation was replaced after this audit; current local verification confirms the Google Identity Services button renders, while a real account sign-in remains unverified.
+- `/api/ai` malformed request returned 400.
+- `/api/v1/openapi` returned 200.
+- Protected credits/tenant routes returned 401 without credentials.
+
+Production blocker confirmed:
+- `/api/v1/health` returned 503 with `databaseConfigured:false`.
+- A valid synthetic guidance request returned 503 because the deployed Worker does not have `SUPABASE_SECRET_KEY` configured.
+- Configure Cloudflare Worker secrets/variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and server-only `SUPABASE_SECRET_KEY`. This cannot be fixed safely by source code or by exposing a secret in the browser.

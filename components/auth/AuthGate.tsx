@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { ArrowRight, Loader2, LockKeyhole, Mail, X } from "lucide-react";
@@ -26,6 +26,23 @@ const withAuthTimeout = <T,>(operation: PromiseLike<T>) => Promise.race([
 const localDevName = process.env.NEXT_PUBLIC_LOCAL_DEV_USER_NAME;
 const localDevEmail = process.env.NEXT_PUBLIC_LOCAL_DEV_USER_EMAIL;
 const localDevPassword = process.env.NEXT_PUBLIC_LOCAL_DEV_USER_PASSWORD;
+const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+declare global {
+  interface Window {
+    futureAtlasGoogleCallback?: (response: { credential?: string }) => void;
+    futureAtlasGoogleClientId?: string;
+    google?: {
+      accounts: {
+        id: {
+          initialize: (options: { client_id: string; callback: (response: { credential?: string }) => void }) => void;
+          renderButton: (element: HTMLElement, options: Record<string, string | number | boolean>) => void;
+          disableAutoSelect: () => void;
+        };
+      };
+    };
+  }
+}
 const localDeveloper = {
   id: "local-developer",
   aud: "authenticated",
@@ -80,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const signOut = useCallback(async () => {
+    window.google?.accounts.id.disableAutoSelect();
     await supabase.auth.signOut();
     setUser(null);
     router.push("/");
@@ -130,8 +148,47 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
   const [step, setStep] = useState<"email" | "otp" | "password">("email");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const googleButton = useRef<HTMLDivElement>(null);
 
   useEffect(() => { queueMicrotask(() => setLocalHost(["localhost", "127.0.0.1"].includes(window.location.hostname))); }, []);
+
+  useEffect(() => {
+    if (step !== "email" || !googleClientId || !googleButton.current) return;
+    const render = () => {
+      if (!window.google || !googleButton.current) return;
+      window.futureAtlasGoogleCallback = async ({ credential }) => {
+          if (!credential) return setError("Google did not return a valid login credential.");
+          setBusy(true);
+          setError("");
+          try {
+            const { data, error: googleError } = await withAuthTimeout(supabase.auth.signInWithIdToken({ provider: "google", token: credential }));
+            if (googleError || !data.user) throw googleError || new Error("Google login failed.");
+            onVerified(data.user);
+          } catch (googleError) {
+            setBusy(false);
+            setError(googleError instanceof Error ? googleError.message : "Google login failed.");
+          }
+      };
+      if (window.futureAtlasGoogleClientId !== googleClientId) {
+        window.google.accounts.id.initialize({ client_id: googleClientId, callback: (response) => window.futureAtlasGoogleCallback?.(response) });
+        window.futureAtlasGoogleClientId = googleClientId;
+      }
+      googleButton.current.replaceChildren();
+      window.google.accounts.id.renderButton(googleButton.current, { type: "standard", theme: "outline", size: "large", shape: "pill", text: "continue_with", width: 320 });
+    };
+    const existing = document.querySelector<HTMLScriptElement>('script[src="https://accounts.google.com/gsi/client"]');
+    if (existing) {
+      if (window.google) render();
+      else existing.addEventListener("load", render, { once: true });
+      return () => existing.removeEventListener("load", render);
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.onload = render;
+    script.onerror = () => setError("Google login could not be loaded.");
+    document.head.appendChild(script);
+  }, [onVerified, step]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -191,21 +248,6 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
     }
   }
 
-  async function signInWithGoogle() {
-    setBusy(true);
-    setError("");
-    try {
-      const { data, error: googleError } = await withAuthTimeout(supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href, skipBrowserRedirect: true } }));
-      if (googleError) throw googleError;
-      if (!data.url) throw new Error("Google login is unavailable.");
-      setBusy(false);
-      window.location.assign(data.url);
-    } catch (googleError) {
-      setBusy(false);
-      setError(googleError instanceof Error ? googleError.message : "Google login failed.");
-    }
-  }
-
   return (
     <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Sign in to Future Atlas">
       <div className="w-full max-w-sm rounded-2xl border border-white/40 bg-white p-6 shadow-2xl">
@@ -224,7 +266,7 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
             {busy ? <Loader2 className="animate-spin" size={17} /> : <ArrowRight size={17} />}
             {step === "email" ? "Email me a code" : step === "password" ? "Sign in locally" : "Verify and continue"}
           </button>
-          {step === "email" && <button type="button" onClick={signInWithGoogle} disabled={busy} className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Continue with Google</button>}
+          {step === "email" && googleClientId && <div ref={googleButton} className={`flex min-h-10 justify-center ${busy ? "pointer-events-none opacity-60" : ""}`} aria-label="Continue with Google" />}
           {localHost && localDevEmail && localDevPassword && step !== "otp" && <button type="button" onClick={() => { const next = step === "password" ? "email" : "password"; setStep(next); if (next === "password") { setName(localDevName || "Local Developer"); setEmail(localDevEmail); } }} className="w-full text-xs font-medium text-slate-500 hover:text-slate-900">{step === "password" ? "Use email OTP" : "Developer password login"}</button>}
         </form>
       </div>
