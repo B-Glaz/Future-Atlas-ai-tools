@@ -3,13 +3,19 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { POST as handleAIRequest } from "../../ai/route";
 import { normalizeOrigin } from "@/lib/security/embed-utils";
+import { isTenantApiKey, isUserAccessToken } from "@/lib/auth/request-auth";
+import { withRequestLog } from "@/lib/security/request-log";
 
-export function POST(request: NextRequest) {
+export const POST = withRequestLog(function POST(request: NextRequest) {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
   const idempotencyKey = request.headers.get("idempotency-key")?.trim() || "";
   const requestId = crypto.randomUUID();
 
-  if (!token.startsWith("fa_test_") && !token.startsWith("fa_live_")) {
+  if (isUserAccessToken(token)) {
+    return handleAIRequest(request);
+  }
+
+  if (!isTenantApiKey(token)) {
     return NextResponse.json(
       { error: { code: "FA_INVALID_API_KEY", message: "A tenant API key is required.", retryable: false, requestId } },
       { status: 401, headers: { "X-Request-ID": requestId } }
@@ -29,4 +35,4 @@ export function POST(request: NextRequest) {
   }
 
   return handleAIRequest(request);
-}
+});

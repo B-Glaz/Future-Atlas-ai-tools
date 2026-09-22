@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { withRequestLog } from "@/lib/security/request-log";
 
 const errorResponse = { $ref: "#/components/responses/Error" };
 
-export function GET() {
+export const GET = withRequestLog(function GET() {
   return NextResponse.json({
     openapi: "3.1.0",
     info: {
@@ -131,4 +132,4 @@ export function GET() {
       },
     },
   });
-}
+});

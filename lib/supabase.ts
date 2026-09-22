@@ -40,3 +40,16 @@ export function createRequestSupabase(accessToken: string) {
     }
   );
 }
+
+export function createAccessTokenSupabase(accessToken: string) {
+  const secret = process.env.SUPABASE_SECRET_KEY;
+  if (!secret) throw new Error("SUPABASE_SECRET_KEY is not configured.");
+  return createClient(
+    supabaseUrl,
+    secret,
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${secret}`, "x-future-atlas-token": accessToken } },
+    }
+  );
+}

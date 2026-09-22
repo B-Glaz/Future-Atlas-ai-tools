@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
-import { createPublicSupabase, createRequestSupabase } from "@/lib/supabase";
+import { isTenantApiKey, resolveRequestAuth } from "@/lib/auth/request-auth";
+import { createPublicSupabase } from "@/lib/supabase";
 import { creditQuarters, secondsUntilKolkataMidnight } from "@/lib/ai/credit-policy";
 
 export class CreditError extends Error {
@@ -112,15 +113,16 @@ export async function consumeCredit(
 
   if (!accessToken) return consumeGuestCredit(request);
 
-  const apiKey = accessToken.startsWith("fa_") ? accessToken : "";
-  const client = apiKey ? createPublicSupabase() : createRequestSupabase(accessToken);
-  let authenticatedUserId = "";
+  const apiKey = isTenantApiKey(accessToken) ? accessToken : "";
+  const userAuth = apiKey ? null : await resolveRequestAuth(request);
+  const client = apiKey ? createPublicSupabase() : userAuth?.client;
+  let authenticatedUserId = userAuth?.user.id || "";
 
   if (!apiKey) {
-    const { data: { user }, error } = await client.auth.getUser(accessToken);
-    if (error || !user) throw new CreditError("Your session has expired. Please sign in again.", 401, "FA_AUTH_REQUIRED");
-    authenticatedUserId = user.id;
+    if (!userAuth || !client) throw new CreditError("Your session has expired. Please sign in again.", 401, "FA_AUTH_REQUIRED");
+    authenticatedUserId = userAuth.user.id;
   }
+  if (!client) throw new CreditError("AI admission is temporarily unavailable.", 503, "FA_ADMISSION_FAILED");
 
   const requestId = crypto.randomUUID();
   const idempotencyKey = request.headers.get("idempotency-key")?.trim() || requestId;
@@ -159,8 +161,9 @@ export async function completeCreditRequest(
     if (status === "failed") releaseGuestCredit(authorization);
     return;
   }
-  const bearer = request.headers.get("authorization")?.slice(7).trim() || "";
-  const client = authorization.apiKey ? createPublicSupabase() : createRequestSupabase(bearer);
+  const userAuth = authorization.apiKey ? null : await resolveRequestAuth(request);
+  const client = authorization.apiKey ? createPublicSupabase() : userAuth?.client;
+  if (!client) return;
   const { data, error } = authorization.apiKey
     ? await client.rpc("future_atlas_complete_request", { p_request_id: authorization.requestId, p_api_key: authorization.apiKey, p_status: status, p_result_payload: payload || null, p_error_code: details?.errorCode || null, p_provider: details?.provider || null, p_duration_ms: details?.durationMs || null })
     : await client.rpc("future_atlas_complete_user_request", { p_request_id: authorization.requestId, p_status: status, p_result_payload: payload || null, p_error_code: details?.errorCode || null, p_provider: details?.provider || null, p_duration_ms: details?.durationMs || null, p_credit_quarters: creditQuarters(authorization.mode, payload) });

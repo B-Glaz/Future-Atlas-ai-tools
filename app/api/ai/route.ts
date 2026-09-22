@@ -4,7 +4,9 @@ import { consumeCredit, completeCreditRequest, CreditError } from "@/lib/ai/cred
 import { requestAI } from "@/lib/ai/providers";
 import type { AIMode } from "@/lib/ai/types";
 import { getCacheKey } from "@/lib/ai/cache-utils";
+import { encodeSseEvent } from "@/lib/ai/sse";
 import { isStructuredOutput, normalizeStructuredOutput } from "@/lib/ai/structured-output";
+import { withRequestLog } from "@/lib/security/request-log";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +31,93 @@ const NORMAL_MAX_TOKENS = 900;
 function errorDetails(error: unknown) {
   if (!(error instanceof Error)) return { name: "UnknownError" };
   const status = "status" in error && typeof error.status === "number" ? error.status : undefined;
-  return { name: error.name, status };
+  return { name: error.name, status, message: error.message.slice(0, 180) };
+}
+
+function isTimeoutError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const name = error.name.toLowerCase();
+  const message = error.message.toLowerCase();
+  return name === "timeouterror" || name === "aborterror" || name === "apiuseraborterror" || name === "apiconnectiontimeouterror" || message.includes("timeout") || message.includes("aborted");
+}
+
+function streamFailure(error: unknown) {
+  if (isTimeoutError(error)) {
+    return { code: "AI_PROVIDER_TIMEOUT", message: "The AI service took too long to respond. Please try again.", retryable: true };
+  }
+  if (error instanceof Error && /invalid response|cut off/i.test(error.message)) {
+    return { code: "AI_INVALID_RESPONSE", message: "The live AI returned an invalid response.", retryable: true };
+  }
+  return { code: "AI_PROVIDER_UNAVAILABLE", message: "The live AI service could not complete this request.", retryable: true };
+}
+
+function wantsStream(request: NextRequest, body: Record<string, unknown>) {
+  return body.stream === true || (request.headers.get("accept") || "").includes("text/event-stream");
+}
+
+function sseResponse(
+  requestId: string,
+  run: (send: (event: string, data: unknown) => Promise<void>) => Promise<void>
+) {
+  const encoder = new TextEncoder();
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  let writes = Promise.resolve();
+
+  const send = (event: string, data: unknown) => {
+    writes = writes.then(() => writer.write(encoder.encode(encodeSseEvent(event, data))));
+    return writes;
+  };
+
+  void (async () => {
+    try {
+      await run(send);
+    } catch (error) {
+      await send("error", {
+        code: isTimeoutError(error) ? "AI_PROVIDER_TIMEOUT" : "AI_INTERNAL_ERROR",
+        message: isTimeoutError(error)
+          ? "The AI service took too long to respond. Please try again."
+          : "Something went wrong while connecting to Future Atlas AI.",
+        retryable: true,
+      }).catch(() => undefined);
+    } finally {
+      await writes.catch(() => undefined);
+      await writer.close().catch(() => undefined);
+    }
+  })();
+
+  return new Response(readable, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+      "X-Request-ID": requestId,
+    },
+  });
+}
+
+function aiResultResponse(
+  streamRequested: boolean,
+  requestId: string,
+  payload: Record<string, unknown>,
+  extra?: { delta?: string }
+) {
+  if (!streamRequested) {
+    return NextResponse.json(payload, { headers: { "X-Request-ID": requestId } });
+  }
+
+  return sseResponse(requestId, async (send) => {
+    await send("meta", {
+      mode: payload.mode,
+      personality: payload.personality,
+      cached: payload.cached === true,
+      requestId,
+    });
+    if (extra?.delta) await send("delta", { text: extra.delta });
+    await send("done", payload);
+  });
 }
 
 // ============================================================
@@ -473,7 +561,7 @@ function isClearlyUnrelatedStudyAbroadQuestion(
 // POST
 // ============================================================
 
-export async function POST(
+async function handleAIRequest(
   request: NextRequest
 ) {
   const requestStartedAt = Date.now();
@@ -509,6 +597,7 @@ export async function POST(
     const message = body.message;
     const inputs = body.inputs;
     const context = typeof body.context === "string" ? body.context.slice(0, 4_000) : "";
+    const streamRequested = wantsStream(request, body as Record<string, unknown>);
 
     const responseFormat =
       body.responseFormat as string | undefined;
@@ -565,9 +654,15 @@ export async function POST(
     credit = await consumeCredit(request, mode, requestHash);
 
     if (credit.replayStatus === "completed" && credit.replayPayload) {
-      return NextResponse.json(credit.replayPayload, {
-        headers: { "X-Request-ID": credit.requestId, "Idempotency-Replayed": "true" },
-      });
+      const replay = credit.replayPayload as Record<string, unknown>;
+      const replayResponse = aiResultResponse(
+        streamRequested,
+        credit.requestId,
+        replay,
+        typeof replay.response === "string" ? { delta: replay.response } : undefined
+      );
+      replayResponse.headers.set("Idempotency-Replayed", "true");
+      return replayResponse;
     }
 
     if (credit.replayStatus === "processing") {
@@ -586,7 +681,7 @@ export async function POST(
         requestId: credit.requestId,
       };
       await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_NOT_GENERATED", durationMs: Date.now() - requestStartedAt });
-      return NextResponse.json(payload, { headers: { "X-Request-ID": credit.requestId } });
+      return aiResultResponse(streamRequested, credit.requestId, payload, { delta: STUDY_ABROAD_REDIRECT });
     }
 
     // --------------------------------------------------------
@@ -724,7 +819,7 @@ If you do not have enough information, say so.
             requestId: credit.requestId,
           };
           await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_CACHE_HIT", durationMs: Date.now() - requestStartedAt });
-          return NextResponse.json(payload, { headers: { "X-Request-ID": credit.requestId } });
+          return aiResultResponse(streamRequested, credit.requestId, payload);
         } catch {
           responseCache.delete(cacheKey);
           console.warn(`[AI] INVALID CACHED JSON | mode=${mode}`);
@@ -738,7 +833,7 @@ If you do not have enough information, say so.
           requestId: credit.requestId,
         };
         await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_CACHE_HIT", durationMs: Date.now() - requestStartedAt });
-        return NextResponse.json(payload, { headers: { "X-Request-ID": credit.requestId } });
+        return aiResultResponse(streamRequested, credit.requestId, payload, { delta: cachedResponse });
       }
     }
 
@@ -781,7 +876,7 @@ If you do not have enough information, say so.
             requestId: credit.requestId,
           };
           await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_IN_FLIGHT_REUSE", durationMs: Date.now() - requestStartedAt });
-          return NextResponse.json(payload, { headers: { "X-Request-ID": credit.requestId } });
+          return aiResultResponse(streamRequested, credit.requestId, payload);
         } catch {
           responseCache.delete(cacheKey);
           await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_INVALID_RESPONSE", durationMs: Date.now() - requestStartedAt });
@@ -797,7 +892,7 @@ If you do not have enough information, say so.
         requestId: credit.requestId,
       };
       await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_IN_FLIGHT_REUSE", durationMs: Date.now() - requestStartedAt });
-      return NextResponse.json(payload, { headers: { "X-Request-ID": credit.requestId } });
+      return aiResultResponse(streamRequested, credit.requestId, payload, { delta: response });
     }
 
     // --------------------------------------------------------
@@ -805,21 +900,144 @@ If you do not have enough information, say so.
     // --------------------------------------------------------
 
     let selectedProvider = "";
+    const validateContent = (content: string) => {
+      if (!content.trim()) return false;
+      if (!isStructured) return true;
+
+      try {
+        const parsed = normalizeStructuredOutput(mode, extractJson(content) as Record<string, unknown>, inputs);
+        return isStructuredOutput(mode, parsed);
+      } catch {
+        return false;
+      }
+    };
+
+    if (streamRequested) {
+      let resolvePending!: (value: string) => void;
+      let rejectPending!: (error: unknown) => void;
+      const pending = new Promise<string>((resolve, reject) => {
+        resolvePending = resolve;
+        rejectPending = reject;
+      });
+      pending.catch(() => undefined);
+      pendingResponses.set(cacheKey, pending);
+
+      return sseResponse(credit.requestId, async (send) => {
+        let settled = false;
+        try {
+          await send("meta", {
+            mode,
+            personality: personality.name,
+            cached: false,
+            requestId: credit.requestId,
+          });
+
+          let live = false;
+          const { content, provider } = await requestAI({
+            messages,
+            structured: isStructured,
+            maxTokens: isStructured ? STRUCTURED_MAX_TOKENS : NORMAL_MAX_TOKENS,
+            validate: validateContent,
+            onAttemptStart: () => {
+              if (!live) return;
+              live = false;
+              void send("reset", { reason: "provider_fallback" });
+            },
+            onChunk: (text) => {
+              live = true;
+              void send("delta", { text });
+            },
+          });
+
+          selectedProvider = provider;
+          console.log(`[AI] RESPONSE WINNER | provider=${provider} | mode=${mode}`);
+          writeCachedResponse(cacheKey, content);
+          settled = true;
+          resolvePending(content);
+
+          console.log(`[AI] TOTAL ROUTE TIME | ${Date.now() - requestStartedAt}ms | mode=${mode}`);
+
+          if (isStructured) {
+            let parsed;
+            try {
+              parsed = normalizeStructuredOutput(mode, extractJson(content) as Record<string, unknown>, inputs);
+              if (!isStructuredOutput(mode, parsed)) {
+                throw new Error("AI response did not match the required result shape.");
+              }
+            } catch (jsonError) {
+              console.error(JSON.stringify({
+                event: "ai_invalid_structured_response",
+                mode,
+                requestId: credit.requestId,
+                ...errorDetails(jsonError),
+              }));
+              await completeCreditRequest(request, credit, "failed", undefined, {
+                errorCode: "AI_INVALID_RESPONSE",
+                durationMs: Date.now() - requestStartedAt,
+              });
+              await send("error", {
+                code: "AI_INVALID_RESPONSE",
+                message: "The live AI returned an invalid response.",
+                retryable: true,
+              });
+              return;
+            }
+
+            const payload = {
+              data: parsed,
+              mode,
+              personality: personality.name,
+              cached: false,
+              creditsRemaining: credit.creditsRemaining,
+              requestId: credit.requestId,
+            };
+            await completeCreditRequest(request, credit, "completed", payload, {
+              provider: selectedProvider || undefined,
+              durationMs: Date.now() - requestStartedAt,
+            });
+            await send("done", payload);
+            return;
+          }
+
+          const payload = {
+            response: content,
+            mode,
+            personality: personality.name,
+            cached: false,
+            creditsRemaining: credit.creditsRemaining,
+            requestId: credit.requestId,
+          };
+          await completeCreditRequest(request, credit, "completed", payload, {
+            provider: selectedProvider || undefined,
+            durationMs: Date.now() - requestStartedAt,
+          });
+          await send("done", payload);
+        } catch (error) {
+          if (!settled) rejectPending(error);
+          console.error(JSON.stringify({
+            event: "ai_provider_request_failed",
+            mode,
+            durationMs: Date.now() - requestStartedAt,
+            ...errorDetails(error),
+          }));
+          if (settled) return;
+          const failure = streamFailure(error);
+          await completeCreditRequest(request, credit, "failed", undefined, {
+            errorCode: failure.code,
+            durationMs: Date.now() - requestStartedAt,
+          });
+          await send("error", failure);
+        } finally {
+          pendingResponses.delete(cacheKey);
+        }
+      });
+    }
+
     const nextResponse = requestAI({
       messages,
       structured: isStructured,
       maxTokens: isStructured ? STRUCTURED_MAX_TOKENS : NORMAL_MAX_TOKENS,
-      validate: (content) => {
-        if (!content.trim()) return false;
-        if (!isStructured) return true;
-
-        try {
-          const parsed = normalizeStructuredOutput(mode, extractJson(content) as Record<string, unknown>, inputs);
-          return isStructuredOutput(mode, parsed);
-        } catch {
-          return false;
-        }
-      },
+      validate: validateContent,
     })
         .then(({ content, provider }) => {
           selectedProvider = provider;
@@ -853,11 +1071,17 @@ If you do not have enough information, say so.
 
     try {
       response = await nextResponse;
-    } catch {
+    } catch (error) {
       await completeCreditRequest(request, credit, "failed", undefined, {
-        errorCode: "AI_PROVIDER_UNAVAILABLE",
+        errorCode: isTimeoutError(error) ? "AI_PROVIDER_TIMEOUT" : "AI_PROVIDER_UNAVAILABLE",
         durationMs: Date.now() - requestStartedAt,
       });
+      if (isTimeoutError(error)) {
+        return NextResponse.json(
+          { error: { code: "AI_PROVIDER_TIMEOUT", message: "The AI service took too long to respond. Please try again.", retryable: true, requestId: credit.requestId } },
+          { status: 504, headers: { "Retry-After": "5", "X-Request-ID": credit.requestId } }
+        );
+      }
       return NextResponse.json(
         { error: { code: "AI_PROVIDER_UNAVAILABLE", message: "The live AI service could not complete this request.", retryable: true, requestId: credit.requestId } },
         { status: 503, headers: { "Retry-After": "5", "X-Request-ID": credit.requestId } }
@@ -981,15 +1205,7 @@ If you do not have enough information, say so.
     // Timeout
     // --------------------------------------------------------
 
-    if (
-      error instanceof Error &&
-      (
-        error.name === "AbortError" ||
-        error.message
-          .toLowerCase()
-          .includes("timeout")
-      )
-    ) {
+    if (isTimeoutError(error)) {
       return NextResponse.json(
         {
           error:
@@ -1012,3 +1228,5 @@ If you do not have enough information, say so.
     );
   }
 }
+
+export const POST = withRequestLog(handleAIRequest);

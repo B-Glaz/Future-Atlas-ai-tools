@@ -5,6 +5,8 @@ type ProviderRequest = {
   structured: boolean;
   maxTokens: number;
   validate: (content: string) => boolean;
+  onAttemptStart?: () => void;
+  onChunk?: (text: string) => void;
 };
 
 type Provider = {
@@ -15,14 +17,50 @@ type Provider = {
   extraBody?: Record<string, unknown>;
 };
 
-const PROVIDER_TIMEOUT_MS = 120_000;
 type ProviderHealth = { failures: number; blockedUntil: number };
 const providerHealth = ((globalThis as typeof globalThis & { futureAtlasProviderHealth?: Map<string, ProviderHealth> }).futureAtlasProviderHealth ??= new Map());
+
+function timeoutError() {
+  return new DOMException("The operation was aborted due to timeout", "TimeoutError");
+}
+
+function createStreamingSignal() {
+  const idleMs = Math.max(1, Number(process.env.AI_PROVIDER_IDLE_TIMEOUT_MS) || 40_000);
+  const overallMs = Math.max(idleMs, Number(process.env.AI_PROVIDER_TIMEOUT_MS) || 120_000);
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  let idleTimer: ReturnType<typeof setTimeout>;
+
+  const abort = () => {
+    if (!controller.signal.aborted) controller.abort(timeoutError());
+  };
+
+  const touch = () => {
+    clearTimeout(idleTimer);
+    const remaining = Math.max(1, overallMs - (Date.now() - startedAt));
+    idleTimer = setTimeout(abort, Math.min(idleMs, remaining));
+  };
+
+  const overallTimer = setTimeout(abort, overallMs);
+  controller.signal.addEventListener("abort", () => {
+    clearTimeout(idleTimer);
+    clearTimeout(overallTimer);
+  });
+
+  return {
+    signal: controller.signal,
+    touch,
+    dispose: () => {
+      clearTimeout(idleTimer);
+      clearTimeout(overallTimer);
+    },
+  };
+}
 
 function errorDetails(error: unknown) {
   if (!(error instanceof Error)) return { name: "UnknownError" };
   const status = "status" in error && typeof error.status === "number" ? error.status : undefined;
-  return { name: error.name, status };
+  return { name: error.name, status, message: error.message.slice(0, 180) };
 }
 
 function configuredProviders(): Provider[] {
@@ -67,37 +105,61 @@ function configuredProviders(): Provider[] {
   return configured.slice(0, maxAttempts);
 }
 
-async function runProvider(provider: Provider, request: ProviderRequest, signal: AbortSignal) {
+async function runProvider(provider: Provider, request: ProviderRequest) {
   const health = providerHealth.get(provider.name);
   if (health && health.blockedUntil > Date.now()) throw new Error(`${provider.name} circuit is open.`);
   const startedAt = Date.now();
+  const { signal, touch, dispose } = createStreamingSignal();
   const client = new OpenAI({
     apiKey: provider.apiKey,
     baseURL: provider.baseURL,
-    timeout: PROVIDER_TIMEOUT_MS,
+    timeout: Math.max(1, Number(process.env.AI_PROVIDER_TIMEOUT_MS) || 120_000),
     maxRetries: 0,
   });
 
   try {
-    const completion = await client.chat.completions.create({
-      model: provider.model,
-      messages: request.messages,
-      temperature: request.structured ? 0.2 : 0.5,
-      top_p: 0.95,
-      max_tokens: request.maxTokens,
-      response_format: request.structured ? { type: "json_object" } : undefined,
-      ...provider.extraBody,
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming, { signal });
-    const content = completion.choices[0]?.message?.content?.trim();
+    const stream = await client.chat.completions.create(
+      {
+        model: provider.model,
+        messages: request.messages,
+        temperature: request.structured ? 0.2 : 0.5,
+        top_p: 0.95,
+        max_tokens: request.maxTokens,
+        stream: true,
+        ...provider.extraBody,
+      } as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
+      { signal }
+    );
 
-    if (completion.choices[0]?.finish_reason === "length" || !content || !request.validate(content)) {
+    let content = "";
+    let finishReason: string | null = null;
+
+    for await (const chunk of stream) {
+      touch();
+      const text = chunk.choices[0]?.delta?.content || "";
+      if (text) {
+        content += text;
+        request.onChunk?.(text);
+      }
+      finishReason = chunk.choices[0]?.finish_reason || finishReason;
+    }
+
+    if (signal.aborted) throw timeoutError();
+
+    content = content.trim();
+
+    if (finishReason === "length") {
+      throw new Error(`${provider.name} response was cut off.`);
+    }
+    if (!content || !request.validate(content)) {
       throw new Error(`${provider.name} returned an invalid response.`);
     }
 
     console.log(`[AI] ${provider.name} completed in ${Date.now() - startedAt}ms`);
     providerHealth.delete(provider.name);
     return { content, provider: provider.name };
-  } catch (error) {
+  } catch (caught) {
+    const error = signal.aborted ? timeoutError() : caught;
     const failures = (providerHealth.get(provider.name)?.failures || 0) + 1;
     providerHealth.set(provider.name, { failures, blockedUntil: failures >= 3 ? Date.now() + 30_000 : 0 });
     console.warn(JSON.stringify({
@@ -107,14 +169,17 @@ async function runProvider(provider: Provider, request: ProviderRequest, signal:
       ...errorDetails(error),
     }));
     throw error;
+  } finally {
+    dispose();
   }
 }
 
 export async function requestAI(request: ProviderRequest) {
   let lastError: unknown;
   for (const provider of configuredProviders()) {
+    request.onAttemptStart?.();
     try {
-      return await runProvider(provider, request, AbortSignal.timeout(PROVIDER_TIMEOUT_MS));
+      return await runProvider(provider, request);
     } catch (error) {
       lastError = error;
     }

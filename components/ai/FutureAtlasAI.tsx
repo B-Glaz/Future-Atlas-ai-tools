@@ -231,6 +231,9 @@ export default function FutureAtlasAI({
     setLoadingMessageIndex(0);
     setIsThinking(true);
 
+    let streamed = "";
+    let assistantMessageId: number | null = null;
+
     try {
       const history = previousMessages.map((item) => ({
         role:
@@ -265,29 +268,52 @@ export default function FutureAtlasAI({
         return;
       }
 
-      const data = await requestAI<{ response?: string }>(requestBody);
+      const data = await requestAI<{ response?: string }>(requestBody, {
+        onDelta: (text) => {
+          streamed += text;
+          setIsThinking(false);
+          if (assistantMessageId == null) {
+            assistantMessageId = nextMessageIdRef.current;
+            nextMessageIdRef.current += 1;
+          }
+          const id = assistantMessageId;
+          setMessages((previous) => {
+            const exists = previous.some((item) => item.id === id);
+            if (!exists) {
+              return [...previous, { id, role: "assistant", content: streamed }];
+            }
+            return previous.map((item) => item.id === id ? { ...item, content: streamed } : item);
+          });
+        },
+        onReset: () => {
+          streamed = "";
+          setIsThinking(true);
+          if (assistantMessageId == null) return;
+          const id = assistantMessageId;
+          setMessages((previous) => previous.map((item) => item.id === id ? { ...item, content: "" } : item));
+        },
+      });
 
-      if (!data.response?.trim()) {
+      const responseText = data.response?.trim() || streamed.trim();
+      if (!responseText) {
         throw new Error("The AI returned an empty response. Please try again.");
       }
 
-      const assistantMessageId = nextMessageIdRef.current;
-      nextMessageIdRef.current += 1;
-
-      const assistantMessage: Message = {
-        id: assistantMessageId,
-        role: "assistant",
-        content: data.response,
-      };
+      if (assistantMessageId == null) {
+        assistantMessageId = nextMessageIdRef.current;
+        nextMessageIdRef.current += 1;
+        setMessages((previous) => [
+          ...previous,
+          { id: assistantMessageId as number, role: "assistant", content: responseText },
+        ]);
+      } else {
+        const id = assistantMessageId;
+        setMessages((previous) => previous.map((item) => item.id === id ? { ...item, content: responseText } : item));
+      }
 
       writeAIClientCache(cacheKey, {
-        response: data.response,
+        response: responseText,
       });
-
-      setMessages((previous) => [
-        ...previous,
-        assistantMessage,
-      ]);
     } catch (error) {
       console.error("Chat error:", error);
 
@@ -301,19 +327,17 @@ export default function FutureAtlasAI({
         errorText = error.message;
       }
 
-      const errorMessageId = nextMessageIdRef.current;
-      nextMessageIdRef.current += 1;
-
-      const errorMessage: Message = {
-        id: errorMessageId,
-        role: "assistant",
-        content: errorText,
-      };
-
-      setMessages((previous) => [
-        ...previous,
-        errorMessage,
-      ]);
+      if (assistantMessageId != null) {
+        const id = assistantMessageId;
+        setMessages((previous) => previous.map((item) => item.id === id ? { ...item, content: errorText } : item));
+      } else {
+        const errorMessageId = nextMessageIdRef.current;
+        nextMessageIdRef.current += 1;
+        setMessages((previous) => [
+          ...previous,
+          { id: errorMessageId, role: "assistant", content: errorText },
+        ]);
+      }
     } finally {
       setIsThinking(false);
     }

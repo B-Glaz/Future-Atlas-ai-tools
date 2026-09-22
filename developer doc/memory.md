@@ -2,6 +2,13 @@
 
 Last verified: 2026-09-19 (Asia/Kolkata)
 
+## 2026-09-22 AI provider diagnosis
+
+- Tool request/UI contracts, lint, and production build pass.
+- NVIDIA Nemotron 3.5 Lightning produced no completion before timeout; NVIDIA also returned `503 ResourceExhausted` for another current Nemotron endpoint. This is the current cause of missing tool results.
+- NVIDIA requests now use streamed transport and a 40-second bounded attempt so a configured OpenRouter/OpenAI/DeepSeek provider can take over within the browser timeout. Failed attempts remain uncharged.
+- A working secondary provider key is still required for reliable AI output while NVIDIA capacity is unavailable.
+
 ## 2026-09-19 Database and configuration update
 
 - Applied all four existing migrations plus `supabase/migrations/20260919_enable_otp_rate_limit_rls.sql` to project `qkxrzieifutndosqjzsh`.
@@ -15,9 +22,11 @@ Last verified: 2026-09-19 (Asia/Kolkata)
 
 Future Atlas AI is a study-abroad planning application with five AI tools, a study-abroad mentor, Supabase authentication and account credits, a tenant API, controlled iframe embedding, consent analytics, and a Zoho guidance form.
 
-User routes: `/`, `/countries`, `/universities`, `/scholarships`, `/cost-calculator`, `/eligibility`, `/guidance`, `/embed`.
+User routes: `/`, `/countries`, `/universities`, `/scholarships`, `/cost-calculator`, `/eligibility`, `/guidance`, `/embed`, `/tokens`.
 
-API routes: `/api/ai`, `/api/account`, `/api/consent`, `/api/credits`, `/api/events`, `/api/v1/ai`, `/api/v1/health`, `/api/v1/openapi`, `/api/v1/tenants`.
+API routes: `/api/ai`, `/api/account`, `/api/consent`, `/api/credits`, `/api/events`, `/api/tokens`, `/api/tokens/refresh`, `/api/tokens/validate`, `/api/v1/ai`, `/api/v1/health`, `/api/v1/openapi`, `/api/v1/tenants`. Every API handler is wrapped with `withRequestLog` (`lib/security/request-log.ts`), which writes method, path, status, duration, origin, IP, and verified `user_id` to `public.future_atlas_request_logs` after the response via Next.js `after()`. Bodies and tokens are not stored. Writes use `SUPABASE_SECRET_KEY`; missing secret skips persistence. Apply `supabase/migrations/20260922_future_atlas_request_logs.sql` before expecting rows.
+
+Signed-in users can mint personal API tokens at `/tokens`. `POST /api/tokens` issues `fa_atk_` access (1 hour) and `fa_rtk_` refresh (30 days) hashes stored in private tables; plaintext is shown once. `POST /api/tokens/validate`, `POST /api/tokens/refresh`, and `DELETE /api/tokens` inspect, rotate access, and revoke. A valid access token is accepted as `Authorization: Bearer` on user backend APIs through `resolveRequestAuth`. Generating a new pair or deleting the account requires the Google session, not a personal access token. Apply `supabase/migrations/20260923_future_atlas_user_api_tokens.sql` before this works.
 
 Repository: https://github.com/B-Glaz/Future-Atlas-ai-tools.git
 
@@ -97,7 +106,11 @@ Applied and live-verified on 2026-09-18:
 - `supabase/migrations/20260917_future_atlas_user_credit_quarters.sql`
 - `supabase/migrations/20260918_future_atlas_auth_consent.sql`
 
-The migrations provide account/profile provisioning, quarter-credit accounting, Asia/Kolkata reset behavior, completion/status operations, consent logging, and account cleanup. Direct access to server-owned audit/event tables is revoked; server routes use the secret key.
+The migrations provide account/profile provisioning, quarter-credit accounting, Asia/Kolkata reset behavior, completion/status operations, consent logging, request logging, and account cleanup. Direct access to server-owned audit/event/request-log tables is revoked; server routes use the secret key.
+
+Pending apply:
+- `supabase/migrations/20260922_future_atlas_request_logs.sql`
+- `supabase/migrations/20260923_future_atlas_user_api_tokens.sql` (personal access/refresh tokens, acting-user helper, token RPCs, and `future_atlas_delete_my_data` now deletes those tokens).
 
 Supabase leaked-password protection is a dashboard setting and remains **Needs Verification / Enable in dashboard**.
 

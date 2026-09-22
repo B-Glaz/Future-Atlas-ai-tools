@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, GraduationCap, LogOut } from "lucide-react";
+import { ArrowLeft, GraduationCap, KeyRound, LogOut } from "lucide-react";
 import { clearAIClientCache } from "@/lib/ai/client-cache";
 import CreditCounter from "@/components/CreditCounter";
 import { useAuth } from "@/components/auth/AuthGate";
@@ -53,6 +53,7 @@ export default function FutureAtlasHeader() {
         <div className="ml-auto flex items-center gap-3">
           <CreditCounter />
           {user && <>
+          <Link href="/tokens" className="grid h-9 w-9 place-items-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="API tokens" title="API tokens"><KeyRound size={16} /></Link>
           <button type="button" onClick={() => setLogoutOpen(true)} className="grid h-9 w-9 place-items-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-900" aria-label="Sign out" title="Sign out"><LogOut size={16} /></button>
           </>}
         </div>

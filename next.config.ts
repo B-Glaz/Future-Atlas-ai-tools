@@ -38,6 +38,14 @@ const nextConfig: NextConfig = {
         source: "/eligibility/:path*",
         headers: protectedPageHeaders,
       },
+      {
+        source: "/tokens",
+        headers: protectedPageHeaders,
+      },
+      {
+        source: "/tokens/:path*",
+        headers: protectedPageHeaders,
+      },
     ];
   },
 };

@@ -103,6 +103,7 @@ export function useToolFlow<T extends string>(config: ToolFlowConfig<T>) {
 
       const payload = await requestAI<Record<string, unknown>>(requestBody);
 
+
       const result = getStructuredResult(payload, resultKey);
       if (!result || (Array.isArray(result) && !result.length)) {
         throw new Error(`The AI returned no ${resultKey} matches. Please try again.`);

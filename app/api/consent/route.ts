@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { resolveRequestAuth } from "@/lib/auth/request-auth";
+import { withRequestLog } from "@/lib/security/request-log";
 import { createAdminSupabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: NextRequest) {
+export const POST = withRequestLog(async function POST(request: NextRequest) {
   if (Number(request.headers.get("content-length") || 0) > 2_000) return new NextResponse(null, { status: 413 });
   const body = await request.json().catch(() => null);
   if (!body || !/^[0-9a-f-]{36}$/i.test(body.anonymousId || "") || body.necessary !== true || typeof body.analytics !== "boolean" || body.advertising !== false) {
@@ -14,10 +16,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const admin = createAdminSupabase();
-    const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
-    const user = token ? (await admin.auth.getUser(token)).data.user : null;
+    const auth = await resolveRequestAuth(request);
     const { error } = await admin.from("future_atlas_consent_log").insert({
-      user_id: user?.id || null,
+      user_id: auth?.user.id || null,
       anonymous_id: body.anonymousId,
       necessary_accepted: true,
       analytics_accepted: body.analytics,
@@ -28,4 +29,4 @@ export async function POST(request: NextRequest) {
   } catch {
     return new NextResponse(null, { status: 503 });
   }
-}
+});

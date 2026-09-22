@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createAdminSupabase, createRequestSupabase } from "@/lib/supabase";
+import { resolveRequestAuth } from "@/lib/auth/request-auth";
+import { createAdminSupabase } from "@/lib/supabase";
 import { normalizeOrigin } from "@/lib/security/embed-utils";
+import { withRequestLog } from "@/lib/security/request-log";
 
 export const dynamic = "force-dynamic";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -14,17 +16,11 @@ function reply(requestId: string, body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "X-Request-ID": requestId } });
 }
 
-function userClient(request: NextRequest) {
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
-  return token ? createRequestSupabase(token) : null;
-}
-
-export async function GET(request: NextRequest) {
+export const GET = withRequestLog(async function GET(request: NextRequest) {
   const requestId = crypto.randomUUID();
-  const client = userClient(request);
-  if (!client) return reply(requestId, { error: { code: "AUTH_REQUIRED", message: "Sign in first.", requestId } }, 401);
-  const { data: { user } } = await client.auth.getUser();
-  if (!user) return reply(requestId, { error: { code: "AUTH_REQUIRED", message: "Session expired.", requestId } }, 401);
+  const auth = await resolveRequestAuth(request);
+  if (!auth) return reply(requestId, { error: { code: "AUTH_REQUIRED", message: "Sign in first.", requestId } }, 401);
+  const client = auth.client;
   const tenantId = request.nextUrl.searchParams.get("tenantId");
   if (tenantId && !UUID.test(tenantId)) return reply(requestId, { error: { code: "INVALID_TENANT_ID", message: "Valid tenantId required.", requestId } }, 400);
   const { data, error } = tenantId
@@ -32,17 +28,16 @@ export async function GET(request: NextRequest) {
     : await client.rpc("future_atlas_list_tenants");
   if (error) return reply(requestId, { error: { code: "TENANT_LIST_FAILED", message: "Could not load tenants.", requestId } }, 500);
   return reply(requestId, { data, requestId });
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withRequestLog(async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID();
   if (Number(request.headers.get("content-length") || 0) > 16_000) {
     return reply(requestId, { error: { code: "REQUEST_TOO_LARGE", message: "Request is too large.", requestId } }, 413);
   }
-  const client = userClient(request);
-  if (!client) return reply(requestId, { error: { code: "AUTH_REQUIRED", message: "Sign in first.", requestId } }, 401);
-  const { data: { user } } = await client.auth.getUser();
-  if (!user) return reply(requestId, { error: { code: "AUTH_REQUIRED", message: "Session expired.", requestId } }, 401);
+  const auth = await resolveRequestAuth(request);
+  if (!auth) return reply(requestId, { error: { code: "AUTH_REQUIRED", message: "Sign in first.", requestId } }, 401);
+  const client = auth.client;
 
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body || typeof body.action !== "string") {
@@ -99,4 +94,4 @@ export async function POST(request: NextRequest) {
     return reply(requestId, { error: { code, message: "Tenant action failed.", requestId } }, code === "FA_TENANT_FORBIDDEN" ? 403 : 400);
   }
   return reply(requestId, { data: result.data, requestId }, body.action === "create" ? 201 : 200);
-}
+});

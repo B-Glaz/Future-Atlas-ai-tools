@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { withRequestLog } from "@/lib/security/request-log";
 import { createAdminSupabase } from "@/lib/supabase";
 
 const fields = ["firstName", "lastName", "email", "phone", "educationLevel", "school", "country", "university", "course"] as const;
 const zohoUrl = "https://forms.zohopublic.in/onewindow/form/StudyAbroadApplicationForm/formperma/jGJIp30LCf30UXhfAyzC82bep7S1ZSGZNrIfqN28bJ4";
 
-export async function POST(request: NextRequest) {
+export const POST = withRequestLog(async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!body || fields.some((field) => typeof body[field] !== "string") || !body.firstName.trim() || !body.lastName.trim() || !body.email.trim() || !body.phone.trim() || !body.educationLevel.trim()) return NextResponse.json({ error: "Please complete all required fields." }, { status: 400 });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim()) || body.email.length > 320) return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
@@ -24,4 +25,4 @@ export async function POST(request: NextRequest) {
     if (backupError) console.error(JSON.stringify({ event: "guidance_backup_failed", code: backupError.message }));
     return NextResponse.json({ error: "We could not submit your application. Please try again." }, { status: 503 });
   }
-}
+});
