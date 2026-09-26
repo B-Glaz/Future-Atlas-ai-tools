@@ -6,7 +6,7 @@ import type { User } from "@supabase/supabase-js";
 import { LockKeyhole, X } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
-import { accountHistorySnapshot, clearAccountHistory } from "@/lib/local-history";
+import { accountHistorySnapshot, clearAccountHistory } from "@/lib/client/local-history";
 
 type AuthContextValue = {
   user: User | null;

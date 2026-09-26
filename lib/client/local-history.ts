@@ -1,4 +1,4 @@
-import { clearDeviceHistory, deviceHistoryFor, writeDeviceHistory } from "@/lib/device-history";
+import { clearDeviceHistory, deviceHistoryFor, writeDeviceHistory } from "@/lib/client/device-history";
 
 const contextKey = (userId?: string) => `future-atlas:study-context:${userId || "guest"}`;
 

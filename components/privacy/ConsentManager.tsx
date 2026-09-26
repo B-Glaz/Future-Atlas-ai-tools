@@ -3,7 +3,7 @@
 import Script from "next/script";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { recordConsent, trackEvent } from "@/lib/analytics";
+import { recordConsent, trackEvent } from "@/lib/client/analytics";
 
 type Consent = "necessary" | "additional" | null;
 const CONSENT_VERSION = 1;

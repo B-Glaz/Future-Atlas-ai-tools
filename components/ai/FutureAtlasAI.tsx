@@ -9,9 +9,9 @@ import {
   writeAIClientCache,
 } from "@/lib/ai/client-cache";
 import { requestAI } from "@/lib/ai/request";
-import { readToolContext } from "@/lib/local-history";
+import { readToolContext } from "@/lib/client/local-history";
 import { useAuth } from "@/components/auth/AuthGate";
-import { readDeviceHistory, writeDeviceHistory } from "@/lib/device-history";
+import { readDeviceHistory, writeDeviceHistory } from "@/lib/client/device-history";
 import {
   ArrowRight,
   Bot,

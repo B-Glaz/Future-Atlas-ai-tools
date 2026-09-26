@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { requestAI } from "./request";
 import { getAIClientCacheKey, readAIClientCache, writeAIClientCache, clearAIClientCache } from "./client-cache";
-import { getProgressiveOptions } from "@/lib/progressive-options";
+import { getProgressiveOptions } from "@/lib/client/progressive-options";
 import { isCustomStudyInputValid } from "@/components/study-tools/CustomOptionInput";
 import { getStructuredResult } from "./structured-output";
-import { trackEvent } from "@/lib/analytics";
-import { saveToolContext } from "@/lib/local-history";
+import { trackEvent } from "@/lib/client/analytics";
+import { saveToolContext } from "@/lib/client/local-history";
 import { useAuth } from "@/components/auth/AuthGate";
 
 type StepConfig<T extends string> = {
