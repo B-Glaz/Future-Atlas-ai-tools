@@ -13,7 +13,10 @@ const allowed = new Set([
 ]);
 
 const raw = fs.readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
-const stripped = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const stripped = raw
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^\s*\/\/.*$/gm, "")
+  .replace(/,\s*([}\]])/g, "$1");
 const { vars = {} } = JSON.parse(stripped);
 for (const [key, value] of Object.entries(vars)) {
   if (!allowed.has(key) || process.env[key] || typeof value !== "string") continue;
