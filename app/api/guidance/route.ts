@@ -1,33 +1,103 @@
 import { NextRequest, NextResponse } from "next/server";
-
-import { rateLimited } from "@/lib/security/rate-limit";
-import { withRequestLog } from "@/lib/security/request-log";
 import { createAdminSupabase } from "@/lib/supabase";
+import { rateLimited } from "@/lib/security/rate-limit";
 
-const fields = ["firstName", "lastName", "email", "phone", "educationLevel", "school", "country", "university", "course"] as const;
-const zohoUrl = "https://forms.zohopublic.in/onewindow/form/StudyAbroadApplicationForm/formperma/jGJIp30LCf30UXhfAyzC82bep7S1ZSGZNrIfqN28bJ4";
+export const runtime = "nodejs";
 
-export const POST = withRequestLog(async function POST(request: NextRequest) {
+const ZOHO_RECORDS_URL = "https://forms.zohopublic.in/onewindow/form/StudyAbroadApplicationForm/formperma/jGJIp30LCf30UXhfAyzC82bep7S1ZSGZNrIfqN28bJ4/records";
+const EDUCATION_LEVELS = new Set(["School", "College", "Undergraduate", "Postgraduate", "Other"]);
+
+type GuidanceBody = {
+  firstName?: unknown;
+  lastName?: unknown;
+  email?: unknown;
+  phone?: unknown;
+  educationLevel?: unknown;
+  school?: unknown;
+  country?: unknown;
+  university?: unknown;
+  course?: unknown;
+  referrer?: unknown;
+};
+
+function text(value: unknown, max: number) {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function referrerName(value: unknown) {
+  const referrer = text(value, 1800);
+  return /^https?:\/\//i.test(referrer) ? referrer : "";
+}
+
+export async function POST(request: NextRequest) {
   const limited = rateLimited(request, "guidance", 8, 60_000);
   if (limited) return limited;
-  const rawBody = await request.text();
-  if (rawBody.length > 8_000) return NextResponse.json({ error: "Request is too large." }, { status: 413 });
-  const body = (() => { try { return JSON.parse(rawBody); } catch { return null; } })();
-  if (!body || fields.some((field) => typeof body[field] !== "string") || !body.firstName.trim() || !body.lastName.trim() || !body.email.trim() || !body.phone.trim() || !body.educationLevel.trim()) return NextResponse.json({ error: "Please complete all required fields." }, { status: 400 });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim()) || body.email.length > 320) return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
+
+  const raw = await request.text();
+  if (raw.length > 8000) return NextResponse.json({ error: "Request is too large." }, { status: 413 });
+  let body: GuidanceBody;
   try {
-    const prefill = new URLSearchParams({
-      Name_First: body.firstName.trim().slice(0, 100), Name_Last: body.lastName.trim().slice(0, 100), Email: body.email.trim().toLowerCase(),
-      PhoneNumber: body.phone.trim().slice(0, 40), Dropdown: body.educationLevel.trim().slice(0, 80), SingleLine: body.school.trim().slice(0, 200),
-      SingleLine1: body.country.trim().slice(0, 120), SingleLine2: body.university.trim().slice(0, 200), SingleLine3: body.course.trim().slice(0, 160),
-    });
-    return NextResponse.json({ ok: true, zohoUrl: `${zohoUrl}?${prefill}` });
-  } catch (error) {
-    console.error(JSON.stringify({ event: "guidance_submission_failed", code: error instanceof Error ? error.message : "unknown" }));
-    const { error: backupError } = await createAdminSupabase().from("future_atlas_guidance_submissions").insert({
-      first_name: body.firstName.trim().slice(0, 100), last_name: body.lastName.trim().slice(0, 100), email: body.email.trim().toLowerCase(), phone: body.phone.trim().slice(0, 40), education_level: body.educationLevel.trim().slice(0, 80), school: body.school.trim().slice(0, 200), country: body.country.trim().slice(0, 120), university: body.university.trim().slice(0, 200), course: body.course.trim().slice(0, 160),
-    });
-    if (backupError) console.error(JSON.stringify({ event: "guidance_backup_failed", code: backupError.message }));
-    return NextResponse.json({ error: "We could not submit your application. Please try again." }, { status: 503 });
+    body = JSON.parse(raw) as GuidanceBody;
+  } catch {
+    return NextResponse.json({ error: "Enter your name, email, mobile number, education level, and school." }, { status: 400 });
   }
-});
+  const firstName = text(body.firstName, 255);
+  const lastName = text(body.lastName, 255);
+  const email = text(body.email, 255);
+  const phone = text(body.phone, 20);
+  const educationLevel = text(body.educationLevel, 40);
+  const school = text(body.school, 255);
+  const country = text(body.country, 255);
+  const university = text(body.university, 255);
+  const course = text(body.course, 255);
+  const referrer = referrerName(body.referrer);
+
+  if (!firstName || !lastName || !email || !phone || !school || !EDUCATION_LEVELS.has(educationLevel) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return NextResponse.json({ error: "Enter your name, email, mobile number, education level, and school." }, { status: 400 });
+  }
+
+  const record: Record<string, unknown> = {
+    Name: { Name_First: firstName, Name_Last: lastName },
+    Email: email,
+    PhoneNumber: phone,
+    Dropdown: educationLevel,
+    SingleLine: school,
+    SingleLine1: country,
+    SingleLine2: university,
+    SingleLine3: course,
+  };
+  if (referrer) record.REFERRER_NAME = referrer;
+
+  let zohoOk = false;
+  try {
+    const zoho = await fetch(ZOHO_RECORDS_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/zoho.forms-v1+json",
+      },
+      body: JSON.stringify(record),
+      signal: AbortSignal.timeout(12_000),
+    });
+    zohoOk = zoho.ok;
+  } catch {
+    zohoOk = false;
+  }
+
+  if (zohoOk) return NextResponse.json({ ok: true });
+
+  const admin = createAdminSupabase();
+  const { error } = await admin.from("future_atlas_guidance_submissions").insert({
+    first_name: firstName,
+    last_name: lastName,
+    email,
+    phone,
+    education_level: educationLevel,
+    school,
+    country,
+    university,
+    course,
+  });
+  if (error) return NextResponse.json({ error: "Could not submit the form. Please try again." }, { status: 502 });
+  return NextResponse.json({ error: "We saved your details, but the form service did not accept them. Please try again in a moment." }, { status: 502 });
+}

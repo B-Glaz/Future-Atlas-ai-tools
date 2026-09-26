@@ -101,7 +101,6 @@ export default function ApiTokensPanel() {
           <div className="grid h-11 w-11 place-items-center rounded-xl bg-slate-900 text-white"><KeyRound size={20} /></div>
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Generate tokens</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-500">Creates a new access token (1 hour) and refresh token (30 days). Previous tokens for this account are revoked. API calls allow 200 requests per calendar day and 10 requests per hour.</p>
           </div>
         </div>
         <p className="mt-4 text-xs text-slate-400">
@@ -197,6 +196,8 @@ export default function ApiTokensPanel() {
           </button>
         </div>
       </section>
+
+      <p className="text-sm leading-6 text-slate-500">Creates a new access token (1 hour) and refresh token (30 days). Previous tokens for this account are revoked. API calls allow 200 requests per calendar day and 10 requests per hour.</p>
     </div>
   );
 }
