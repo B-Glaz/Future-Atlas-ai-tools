@@ -1,6 +1,6 @@
-import FutureAtlasHeader from "@/components/FutureAtlasHeader";
-import GuidanceCTA from "@/components/GuidanceCTA";
-import ScholarshipExplorer from "@/components/Tools/ScholarshipExplorer";
+import FutureAtlasHeader from "@/components/shell/FutureAtlasHeader";
+import GuidanceCTA from "@/components/guidance/GuidanceCTA";
+import ScholarshipExplorer from "@/components/study-tools/ScholarshipExplorer";
 import { ProtectedTool } from "@/components/auth/AuthGate";
 
 export default function ScholarshipsPage() {

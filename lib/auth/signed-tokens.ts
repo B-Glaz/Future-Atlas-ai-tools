@@ -4,6 +4,7 @@ const ACCESS_TTL_SEC = 60 * 60;
 const REFRESH_TTL_SEC = 60 * 60 * 24 * 30;
 const revokedJtis = new Set<string>();
 const userEpoch = new Map<string, number>();
+const currentAccessJti = new Map<string, string>();
 let databaseTokenRpcsAvailable = true;
 
 export function canUseDatabaseTokenRpcs() {
@@ -25,8 +26,8 @@ export function isMissingSchemaError(error?: { code?: string; message?: string }
 }
 
 function signingSecret() {
-  const secret = process.env.SUPABASE_SECRET_KEY;
-  if (!secret) throw new Error("SUPABASE_SECRET_KEY is not configured.");
+  const secret = process.env.API_TOKEN_SIGNING_SECRET || "";
+  if (secret.length < 32) throw new Error("API_TOKEN_SIGNING_SECRET is not configured.");
   return secret;
 }
 
@@ -63,7 +64,7 @@ export function isSignedApiToken(token: string) {
 
 export function inspectSignedToken(token: string) {
   const type = token.startsWith("fa_atk_") ? "access" as const : token.startsWith("fa_rtk_") ? "refresh" as const : null;
-  if (!type) return { valid: false, token_type: null as string | null, expires_at: null as string | null };
+  if (!type) return { valid: false, token_type: null as string | null, expires_at: null as string | null, user_id: null as string | null, jti: null as string | null, version: 0 };
   const payload = readJwt(token.slice(prefixOf(type).length));
   const expiresAt = typeof payload?.exp === "number" ? new Date(payload.exp * 1000).toISOString() : null;
   const sub = typeof payload?.sub === "string" ? payload.sub : "";
@@ -76,17 +77,20 @@ export function inspectSignedToken(token: string) {
     typeof payload.exp === "number" &&
     payload.exp * 1000 > Date.now() &&
     !revokedJtis.has(jti) &&
-    (userEpoch.get(sub) === undefined || ver === userEpoch.get(sub))
+    (userEpoch.get(sub) === undefined || ver === userEpoch.get(sub)) &&
+    (type !== "access" || !currentAccessJti.has(sub) || currentAccessJti.get(sub) === jti)
   );
-  return { valid, token_type: type, expires_at: expiresAt, user_id: valid ? sub : null };
+  return { valid, token_type: type, expires_at: expiresAt, user_id: valid ? sub : null, jti: jti || null, version: ver };
 }
 
 export function issueSignedTokens(userId: string) {
   const now = Math.floor(Date.now() / 1000);
   const ver = Date.now();
   userEpoch.set(userId, ver);
+  const accessJti = crypto.randomUUID();
+  currentAccessJti.set(userId, accessJti);
   return {
-    access_token: `fa_atk_${signJwt({ sub: userId, typ: "access", iat: now, exp: now + ACCESS_TTL_SEC, jti: crypto.randomUUID(), ver })}`,
+    access_token: `fa_atk_${signJwt({ sub: userId, typ: "access", iat: now, exp: now + ACCESS_TTL_SEC, jti: accessJti, ver })}`,
     refresh_token: `fa_rtk_${signJwt({ sub: userId, typ: "refresh", iat: now, exp: now + REFRESH_TTL_SEC, jti: crypto.randomUUID(), ver })}`,
     access_expires_at: new Date((now + ACCESS_TTL_SEC) * 1000).toISOString(),
     refresh_expires_at: new Date((now + REFRESH_TTL_SEC) * 1000).toISOString(),
@@ -99,8 +103,10 @@ export function refreshSignedAccessToken(refreshToken: string) {
   const now = Math.floor(Date.now() / 1000);
   const ver = userEpoch.get(inspected.user_id) ?? Date.now();
   if (!userEpoch.has(inspected.user_id)) userEpoch.set(inspected.user_id, ver);
+  const accessJti = crypto.randomUUID();
+  currentAccessJti.set(inspected.user_id, accessJti);
   return {
-    access_token: `fa_atk_${signJwt({ sub: inspected.user_id, typ: "access", iat: now, exp: now + ACCESS_TTL_SEC, jti: crypto.randomUUID(), ver })}`,
+    access_token: `fa_atk_${signJwt({ sub: inspected.user_id, typ: "access", iat: now, exp: now + ACCESS_TTL_SEC, jti: accessJti, ver })}`,
     access_expires_at: new Date((now + ACCESS_TTL_SEC) * 1000).toISOString(),
   };
 }

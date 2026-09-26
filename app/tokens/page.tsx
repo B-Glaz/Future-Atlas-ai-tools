@@ -1,5 +1,5 @@
-import FutureAtlasHeader from "@/components/FutureAtlasHeader";
-import ApiTokensPanel from "@/components/ApiTokensPanel";
+import FutureAtlasHeader from "@/components/shell/FutureAtlasHeader";
+import ApiTokensPanel from "@/components/tokens/ApiTokensPanel";
 import { ProtectedTool } from "@/components/auth/AuthGate";
 
 export default function TokensPage() {

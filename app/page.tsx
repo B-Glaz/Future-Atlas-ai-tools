@@ -1,4 +1,4 @@
-import FutureAtlasDashboard from "@/components/FutureAtlasDashboard";
+import FutureAtlasDashboard from "@/components/shell/FutureAtlasDashboard";
 
 export default function Home() {
   return (

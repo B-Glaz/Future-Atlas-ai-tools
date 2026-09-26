@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 import { createAccessTokenSupabase, createAdminSupabase, createRequestSupabase } from "@/lib/supabase";
+import { confirmApiToken } from "@/lib/platform/api-keys/tokens";
 import { inspectSignedToken, isMissingSchemaError, isSignedApiToken } from "@/lib/auth/signed-tokens";
 
 export type RequestAuth = {
@@ -30,7 +31,7 @@ export async function resolveRequestAuth(request: NextRequest): Promise<RequestA
   if (isUserAccessToken(token)) {
     if (isSignedApiToken(token)) {
       const inspected = inspectSignedToken(token);
-      if (inspected.valid && inspected.user_id) {
+      if (inspected.valid && inspected.user_id && await confirmApiToken(token)) {
         return { user: { id: inspected.user_id }, token, kind: "access_token", client: createAccessTokenSupabase(token) };
       }
       return null;

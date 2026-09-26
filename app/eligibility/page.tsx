@@ -1,5 +1,5 @@
-import FutureAtlasHeader from "@/components/FutureAtlasHeader";
-import GuidanceCTA from "@/components/GuidanceCTA";
+import FutureAtlasHeader from "@/components/shell/FutureAtlasHeader";
+import GuidanceCTA from "@/components/guidance/GuidanceCTA";
 import FutureAtlasAI from "@/components/ai/FutureAtlasAI";
 import { ProtectedTool } from "@/components/auth/AuthGate";
 

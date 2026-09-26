@@ -1,6 +1,6 @@
-import FutureAtlasHeader from "@/components/FutureAtlasHeader";
-import GuidanceCTA from "@/components/GuidanceCTA";
-import CostCalculator from "@/components/Tools/CostCalculator";
+import FutureAtlasHeader from "@/components/shell/FutureAtlasHeader";
+import GuidanceCTA from "@/components/guidance/GuidanceCTA";
+import CostCalculator from "@/components/study-tools/CostCalculator";
 import { ProtectedTool } from "@/components/auth/AuthGate";
 
 export default function CostCalculatorPage() {

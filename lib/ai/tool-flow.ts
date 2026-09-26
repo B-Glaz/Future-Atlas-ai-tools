@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { requestAI } from "./request";
 import { getAIClientCacheKey, readAIClientCache, writeAIClientCache, clearAIClientCache } from "./client-cache";
 import { getProgressiveOptions } from "@/lib/progressive-options";
-import { isCustomStudyInputValid } from "@/components/Tools/CustomOptionInput";
+import { isCustomStudyInputValid } from "@/components/study-tools/CustomOptionInput";
 import { getStructuredResult } from "./structured-output";
 import { trackEvent } from "@/lib/analytics";
 import { saveToolContext } from "@/lib/local-history";

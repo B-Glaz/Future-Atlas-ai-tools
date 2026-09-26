@@ -1,6 +1,6 @@
-import FutureAtlasHeader from "@/components/FutureAtlasHeader";
-import GuidanceCTA from "@/components/GuidanceCTA";
-import CountryExplorer from "@/components/Tools/CountryExplorer";
+import FutureAtlasHeader from "@/components/shell/FutureAtlasHeader";
+import GuidanceCTA from "@/components/guidance/GuidanceCTA";
+import CountryExplorer from "@/components/study-tools/CountryExplorer";
 import { ProtectedTool } from "@/components/auth/AuthGate";
 
 export default function CountriesPage() {

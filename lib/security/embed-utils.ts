@@ -30,12 +30,5 @@ export function getRefererOrigin(referer: string | null) {
 }
 
 export function getClientIp(headers: Headers) {
-  const forwardedFor = headers.get("x-forwarded-for");
-
-  return (
-    headers.get("cf-connecting-ip") ||
-    headers.get("x-real-ip") ||
-    forwardedFor?.split(",")[0]?.trim() ||
-    undefined
-  );
+  return headers.get("cf-connecting-ip") || undefined;
 }

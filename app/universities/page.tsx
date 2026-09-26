@@ -1,6 +1,6 @@
-import FutureAtlasHeader from "@/components/FutureAtlasHeader";
-import GuidanceCTA from "@/components/GuidanceCTA";
-import UniversityExplorer from "@/components/Tools/UniversityExplorer";
+import FutureAtlasHeader from "@/components/shell/FutureAtlasHeader";
+import GuidanceCTA from "@/components/guidance/GuidanceCTA";
+import UniversityExplorer from "@/components/study-tools/UniversityExplorer";
 import { ProtectedTool } from "@/components/auth/AuthGate";
 
 export default function UniversitiesPage() {

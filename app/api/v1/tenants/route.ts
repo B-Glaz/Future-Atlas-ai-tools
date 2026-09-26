@@ -19,7 +19,7 @@ function reply(requestId: string, body: unknown, status = 200) {
 export const GET = withRequestLog(async function GET(request: NextRequest) {
   const requestId = crypto.randomUUID();
   const auth = await resolveRequestAuth(request);
-  if (!auth) return reply(requestId, { error: { code: "AUTH_REQUIRED", message: "Sign in first.", requestId } }, 401);
+  if (!auth || auth.kind !== "session") return reply(requestId, { error: { code: "AUTH_REQUIRED", message: "Sign in first.", requestId } }, 401);
   const client = auth.client;
   const tenantId = request.nextUrl.searchParams.get("tenantId");
   if (tenantId && !UUID.test(tenantId)) return reply(requestId, { error: { code: "INVALID_TENANT_ID", message: "Valid tenantId required.", requestId } }, 400);
@@ -36,7 +36,7 @@ export const POST = withRequestLog(async function POST(request: NextRequest) {
     return reply(requestId, { error: { code: "REQUEST_TOO_LARGE", message: "Request is too large.", requestId } }, 413);
   }
   const auth = await resolveRequestAuth(request);
-  if (!auth) return reply(requestId, { error: { code: "AUTH_REQUIRED", message: "Sign in first.", requestId } }, 401);
+  if (!auth || auth.kind !== "session") return reply(requestId, { error: { code: "AUTH_REQUIRED", message: "Sign in first.", requestId } }, 401);
   const client = auth.client;
 
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;

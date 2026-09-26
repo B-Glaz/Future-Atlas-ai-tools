@@ -6,6 +6,7 @@ import type { AIMode } from "@/lib/ai/types";
 import { getCacheKey } from "@/lib/ai/cache-utils";
 import { encodeSseEvent } from "@/lib/ai/sse";
 import { isStructuredOutput, normalizeStructuredOutput } from "@/lib/ai/structured-output";
+import { rateLimited } from "@/lib/security/rate-limit";
 import { withRequestLog } from "@/lib/security/request-log";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,8 @@ const NORMAL_MAX_TOKENS = 900;
 function errorDetails(error: unknown) {
   if (!(error instanceof Error)) return { name: "UnknownError" };
   const status = "status" in error && typeof error.status === "number" ? error.status : undefined;
-  return { name: error.name, status, message: error.message.slice(0, 180) };
+  const message = error.message.replace(/sk-[A-Za-z0-9_-]+|sb_secret_[A-Za-z0-9_-]+|Bearer\s+\S+/gi, "[redacted]").slice(0, 180);
+  return { name: error.name, status, message };
 }
 
 function isTimeoutError(error: unknown) {
@@ -570,9 +572,11 @@ async function handleAIRequest(
   let credit: Awaited<ReturnType<typeof consumeCredit>> | undefined;
 
   try {
-    const contentLength = Number(request.headers.get("content-length") || 0);
+    const limited = rateLimited(request, "ai", 30, 60_000);
+    if (limited) return limited;
 
-    if (contentLength > 64_000) {
+    const rawBody = await request.text();
+    if (rawBody.length > 64_000) {
       return NextResponse.json(
         { error: { code: "REQUEST_TOO_LARGE", message: "Request is too large.", retryable: false, requestId: routeRequestId } },
         { status: 413, headers: { "X-Request-ID": routeRequestId } }
@@ -583,7 +587,7 @@ async function handleAIRequest(
     // Read request
     // --------------------------------------------------------
 
-    const body = await request.json();
+    const body = (() => { try { return JSON.parse(rawBody); } catch { return null; } })();
 
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json(
@@ -652,12 +656,13 @@ async function handleAIRequest(
 
     const requestHash = getCacheKey({ mode, message: message.trim(), inputs, context, responseFormat, history });
     credit = await consumeCredit(request, mode, requestHash);
+    const admission = credit;
 
-    if (credit.replayStatus === "completed" && credit.replayPayload) {
-      const replay = credit.replayPayload as Record<string, unknown>;
+    if (admission.replayStatus === "completed" && admission.replayPayload) {
+      const replay = admission.replayPayload as Record<string, unknown>;
       const replayResponse = aiResultResponse(
         streamRequested,
-        credit.requestId,
+        admission.requestId,
         replay,
         typeof replay.response === "string" ? { delta: replay.response } : undefined
       );
@@ -665,10 +670,10 @@ async function handleAIRequest(
       return replayResponse;
     }
 
-    if (credit.replayStatus === "processing") {
+    if (admission.replayStatus === "processing") {
       return NextResponse.json(
-        { error: { code: "AI_REQUEST_IN_PROGRESS", message: "This request is already processing.", retryable: true, retryAfter: 2, requestId: credit.requestId } },
-        { status: 409, headers: { "Retry-After": "2", "X-Request-ID": credit.requestId } }
+        { error: { code: "AI_REQUEST_IN_PROGRESS", message: "This request is already processing.", retryable: true, retryAfter: 2, requestId: admission.requestId } },
+        { status: 409, headers: { "Retry-After": "2", "X-Request-ID": admission.requestId } }
       );
     }
 
@@ -678,10 +683,10 @@ async function handleAIRequest(
         mode,
         personality: personality.name,
         cached: true,
-        requestId: credit.requestId,
+        requestId: admission.requestId,
       };
-      await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_NOT_GENERATED", durationMs: Date.now() - requestStartedAt });
-      return aiResultResponse(streamRequested, credit.requestId, payload, { delta: STUDY_ABROAD_REDIRECT });
+      await completeCreditRequest(request, admission, "failed", undefined, { errorCode: "AI_NOT_GENERATED", durationMs: Date.now() - requestStartedAt });
+      return aiResultResponse(streamRequested, admission.requestId, payload, { delta: STUDY_ABROAD_REDIRECT });
     }
 
     // --------------------------------------------------------
@@ -790,7 +795,7 @@ If you do not have enough information, say so.
     // --------------------------------------------------------
 
     const cacheKey = getCacheKey({
-      cacheScope: credit.cacheScope,
+      cacheScope: admission.cacheScope,
       providerRoutingVersion: 2,
       mode,
       responseFormat,
@@ -816,10 +821,10 @@ If you do not have enough information, say so.
             mode,
             personality: personality.name,
             cached: true,
-            requestId: credit.requestId,
+            requestId: admission.requestId,
           };
-          await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_CACHE_HIT", durationMs: Date.now() - requestStartedAt });
-          return aiResultResponse(streamRequested, credit.requestId, payload);
+          await completeCreditRequest(request, admission, "failed", undefined, { errorCode: "AI_CACHE_HIT", durationMs: Date.now() - requestStartedAt });
+          return aiResultResponse(streamRequested, admission.requestId, payload);
         } catch {
           responseCache.delete(cacheKey);
           console.warn(`[AI] INVALID CACHED JSON | mode=${mode}`);
@@ -830,10 +835,10 @@ If you do not have enough information, say so.
           mode,
           personality: personality.name,
           cached: true,
-          requestId: credit.requestId,
+          requestId: admission.requestId,
         };
-        await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_CACHE_HIT", durationMs: Date.now() - requestStartedAt });
-        return aiResultResponse(streamRequested, credit.requestId, payload, { delta: cachedResponse });
+        await completeCreditRequest(request, admission, "failed", undefined, { errorCode: "AI_CACHE_HIT", durationMs: Date.now() - requestStartedAt });
+        return aiResultResponse(streamRequested, admission.requestId, payload, { delta: cachedResponse });
       }
     }
 
@@ -853,10 +858,10 @@ If you do not have enough information, say so.
       try {
         response = await pendingResponse;
       } catch {
-        await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_PROVIDER_UNAVAILABLE", durationMs: Date.now() - requestStartedAt });
+        await completeCreditRequest(request, admission, "failed", undefined, { errorCode: "AI_PROVIDER_UNAVAILABLE", durationMs: Date.now() - requestStartedAt });
         return NextResponse.json(
-          { error: { code: "AI_PROVIDER_UNAVAILABLE", message: "The live AI service could not complete this request.", retryable: true, requestId: credit.requestId } },
-          { status: 503, headers: { "Retry-After": "5", "X-Request-ID": credit.requestId } }
+          { error: { code: "AI_PROVIDER_UNAVAILABLE", message: "The live AI service could not complete this request.", retryable: true, requestId: admission.requestId } },
+          { status: 503, headers: { "Retry-After": "5", "X-Request-ID": admission.requestId } }
         );
       }
 
@@ -873,13 +878,13 @@ If you do not have enough information, say so.
             mode,
             personality: personality.name,
             cached: true,
-            requestId: credit.requestId,
+            requestId: admission.requestId,
           };
-          await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_IN_FLIGHT_REUSE", durationMs: Date.now() - requestStartedAt });
-          return aiResultResponse(streamRequested, credit.requestId, payload);
+          await completeCreditRequest(request, admission, "failed", undefined, { errorCode: "AI_IN_FLIGHT_REUSE", durationMs: Date.now() - requestStartedAt });
+          return aiResultResponse(streamRequested, admission.requestId, payload);
         } catch {
           responseCache.delete(cacheKey);
-          await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_INVALID_RESPONSE", durationMs: Date.now() - requestStartedAt });
+          await completeCreditRequest(request, admission, "failed", undefined, { errorCode: "AI_INVALID_RESPONSE", durationMs: Date.now() - requestStartedAt });
           return NextResponse.json({ error: "The live AI returned an invalid response. Please try again." }, { status: 502 });
         }
       }
@@ -889,10 +894,10 @@ If you do not have enough information, say so.
         mode,
         personality: personality.name,
         cached: true,
-        requestId: credit.requestId,
+        requestId: admission.requestId,
       };
-      await completeCreditRequest(request, credit, "failed", undefined, { errorCode: "AI_IN_FLIGHT_REUSE", durationMs: Date.now() - requestStartedAt });
-      return aiResultResponse(streamRequested, credit.requestId, payload, { delta: response });
+      await completeCreditRequest(request, admission, "failed", undefined, { errorCode: "AI_IN_FLIGHT_REUSE", durationMs: Date.now() - requestStartedAt });
+      return aiResultResponse(streamRequested, admission.requestId, payload, { delta: response });
     }
 
     // --------------------------------------------------------
@@ -922,14 +927,14 @@ If you do not have enough information, say so.
       pending.catch(() => undefined);
       pendingResponses.set(cacheKey, pending);
 
-      return sseResponse(credit.requestId, async (send) => {
+      return sseResponse(admission.requestId, async (send) => {
         let settled = false;
         try {
           await send("meta", {
             mode,
             personality: personality.name,
             cached: false,
-            requestId: credit.requestId,
+            requestId: admission.requestId,
           });
 
           let live = false;
@@ -968,10 +973,10 @@ If you do not have enough information, say so.
               console.error(JSON.stringify({
                 event: "ai_invalid_structured_response",
                 mode,
-                requestId: credit.requestId,
+                requestId: admission.requestId,
                 ...errorDetails(jsonError),
               }));
-              await completeCreditRequest(request, credit, "failed", undefined, {
+              await completeCreditRequest(request, admission, "failed", undefined, {
                 errorCode: "AI_INVALID_RESPONSE",
                 durationMs: Date.now() - requestStartedAt,
               });
@@ -988,10 +993,10 @@ If you do not have enough information, say so.
               mode,
               personality: personality.name,
               cached: false,
-              creditsRemaining: credit.creditsRemaining,
-              requestId: credit.requestId,
+              creditsRemaining: admission.creditsRemaining,
+              requestId: admission.requestId,
             };
-            await completeCreditRequest(request, credit, "completed", payload, {
+            await completeCreditRequest(request, admission, "completed", payload, {
               provider: selectedProvider || undefined,
               durationMs: Date.now() - requestStartedAt,
             });
@@ -1004,10 +1009,10 @@ If you do not have enough information, say so.
             mode,
             personality: personality.name,
             cached: false,
-            creditsRemaining: credit.creditsRemaining,
-            requestId: credit.requestId,
+            creditsRemaining: admission.creditsRemaining,
+            requestId: admission.requestId,
           };
-          await completeCreditRequest(request, credit, "completed", payload, {
+          await completeCreditRequest(request, admission, "completed", payload, {
             provider: selectedProvider || undefined,
             durationMs: Date.now() - requestStartedAt,
           });
@@ -1022,7 +1027,7 @@ If you do not have enough information, say so.
           }));
           if (settled) return;
           const failure = streamFailure(error);
-          await completeCreditRequest(request, credit, "failed", undefined, {
+          await completeCreditRequest(request, admission, "failed", undefined, {
             errorCode: failure.code,
             durationMs: Date.now() - requestStartedAt,
           });
@@ -1072,19 +1077,19 @@ If you do not have enough information, say so.
     try {
       response = await nextResponse;
     } catch (error) {
-      await completeCreditRequest(request, credit, "failed", undefined, {
+      await completeCreditRequest(request, admission, "failed", undefined, {
         errorCode: isTimeoutError(error) ? "AI_PROVIDER_TIMEOUT" : "AI_PROVIDER_UNAVAILABLE",
         durationMs: Date.now() - requestStartedAt,
       });
       if (isTimeoutError(error)) {
         return NextResponse.json(
-          { error: { code: "AI_PROVIDER_TIMEOUT", message: "The AI service took too long to respond. Please try again.", retryable: true, requestId: credit.requestId } },
-          { status: 504, headers: { "Retry-After": "5", "X-Request-ID": credit.requestId } }
+          { error: { code: "AI_PROVIDER_TIMEOUT", message: "The AI service took too long to respond. Please try again.", retryable: true, requestId: admission.requestId } },
+          { status: 504, headers: { "Retry-After": "5", "X-Request-ID": admission.requestId } }
         );
       }
       return NextResponse.json(
-        { error: { code: "AI_PROVIDER_UNAVAILABLE", message: "The live AI service could not complete this request.", retryable: true, requestId: credit.requestId } },
-        { status: 503, headers: { "Retry-After": "5", "X-Request-ID": credit.requestId } }
+        { error: { code: "AI_PROVIDER_UNAVAILABLE", message: "The live AI service could not complete this request.", retryable: true, requestId: admission.requestId } },
+        { status: 503, headers: { "Retry-After": "5", "X-Request-ID": admission.requestId } }
       );
     }
 
@@ -1110,17 +1115,17 @@ If you do not have enough information, say so.
         console.error(JSON.stringify({
           event: "ai_invalid_structured_response",
           mode,
-          requestId: credit.requestId,
+          requestId: admission.requestId,
           ...errorDetails(jsonError),
         }));
 
-        await completeCreditRequest(request, credit, "failed", undefined, {
+        await completeCreditRequest(request, admission, "failed", undefined, {
           errorCode: "AI_INVALID_RESPONSE",
           durationMs: Date.now() - requestStartedAt,
         });
         return NextResponse.json(
-          { error: { code: "AI_INVALID_RESPONSE", message: "The live AI returned an invalid response.", retryable: true, requestId: credit.requestId } },
-          { status: 502, headers: { "X-Request-ID": credit.requestId } }
+          { error: { code: "AI_INVALID_RESPONSE", message: "The live AI returned an invalid response.", retryable: true, requestId: admission.requestId } },
+          { status: 502, headers: { "X-Request-ID": admission.requestId } }
         );
       }
 
@@ -1129,14 +1134,14 @@ If you do not have enough information, say so.
         mode,
         personality: personality.name,
         cached: false,
-        creditsRemaining: credit.creditsRemaining,
-        requestId: credit.requestId,
+        creditsRemaining: admission.creditsRemaining,
+        requestId: admission.requestId,
       };
-      await completeCreditRequest(request, credit, "completed", payload, {
+      await completeCreditRequest(request, admission, "completed", payload, {
         provider: selectedProvider || undefined,
         durationMs: Date.now() - requestStartedAt,
       });
-      return NextResponse.json(payload, { headers: { "X-Request-ID": credit.requestId } });
+      return NextResponse.json(payload, { headers: { "X-Request-ID": admission.requestId } });
     }
 
     const payload = {
@@ -1144,14 +1149,14 @@ If you do not have enough information, say so.
       mode,
       personality: personality.name,
       cached: false,
-      creditsRemaining: credit.creditsRemaining,
-      requestId: credit.requestId,
+      creditsRemaining: admission.creditsRemaining,
+      requestId: admission.requestId,
     };
-    await completeCreditRequest(request, credit, "completed", payload, {
+    await completeCreditRequest(request, admission, "completed", payload, {
       provider: selectedProvider || undefined,
       durationMs: Date.now() - requestStartedAt,
     });
-    return NextResponse.json(payload, { headers: { "X-Request-ID": credit.requestId } });
+    return NextResponse.json(payload, { headers: { "X-Request-ID": admission.requestId } });
   } catch (error: unknown) {
     const totalTime =
       Date.now() - requestStartedAt;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { rateLimited } from "@/lib/security/rate-limit";
 import { withRequestLog } from "@/lib/security/request-log";
 import { createAdminSupabase } from "@/lib/supabase";
 
@@ -7,7 +8,11 @@ const fields = ["firstName", "lastName", "email", "phone", "educationLevel", "sc
 const zohoUrl = "https://forms.zohopublic.in/onewindow/form/StudyAbroadApplicationForm/formperma/jGJIp30LCf30UXhfAyzC82bep7S1ZSGZNrIfqN28bJ4";
 
 export const POST = withRequestLog(async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => null);
+  const limited = rateLimited(request, "guidance", 8, 60_000);
+  if (limited) return limited;
+  const rawBody = await request.text();
+  if (rawBody.length > 8_000) return NextResponse.json({ error: "Request is too large." }, { status: 413 });
+  const body = (() => { try { return JSON.parse(rawBody); } catch { return null; } })();
   if (!body || fields.some((field) => typeof body[field] !== "string") || !body.firstName.trim() || !body.lastName.trim() || !body.email.trim() || !body.phone.trim() || !body.educationLevel.trim()) return NextResponse.json({ error: "Please complete all required fields." }, { status: 400 });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim()) || body.email.length > 320) return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   try {

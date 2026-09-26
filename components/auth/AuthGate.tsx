@@ -48,13 +48,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [destination, setDestination] = useState<string>();
 
   useEffect(() => {
+    const syncProfile = (accessToken?: string) => {
+      if (!accessToken) return;
+      void fetch("/api/profile", { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
+    };
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null);
       setLoading(false);
+      syncProfile(data.session?.access_token);
     });
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
+      syncProfile(session?.access_token);
     });
     return () => data.subscription.unsubscribe();
   }, []);

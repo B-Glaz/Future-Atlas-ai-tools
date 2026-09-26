@@ -1,6 +1,7 @@
 import { after, type NextRequest } from "next/server";
 
-import { isTenantApiKey, resolveRequestAuth } from "@/lib/auth/request-auth";
+import { isTenantApiKey, isUserAccessToken, resolveRequestAuth } from "@/lib/auth/request-auth";
+import { recordApiKeyAccess } from "@/lib/platform/api-keys/access";
 import { getClientIp } from "@/lib/security/embed-utils";
 import { createAdminSupabase } from "@/lib/supabase";
 
@@ -63,8 +64,16 @@ async function persistRequestLog(
   let authType: "user" | "api_key" | "anonymous" = "anonymous";
   let userId: string | null = null;
 
-  if (isTenantApiKey(token)) {
+  if (isTenantApiKey(token) || isUserAccessToken(token)) {
     authType = "api_key";
+    const auth = isUserAccessToken(token) ? await resolveRequestAuth(request) : null;
+    userId = auth?.user.id || null;
+    await recordApiKeyAccess({
+      token,
+      userId,
+      path: request.nextUrl.pathname,
+      ip: getClientIp(request.headers),
+    });
   } else if (token) {
     const auth = await resolveRequestAuth(request);
     if (auth) {

@@ -5,10 +5,18 @@
   "compatibility_date": "2026-09-15",
   "compatibility_flags": [
     "nodejs_compat",
+    "nodejs_compat_populate_process_env",
     "global_fetch_strictly_public"
   ],
 
-  "vars": {},
+  "vars": {
+    "OPENROUTER_MODEL": "inclusionai/ling-3.0-flash-fin:free",
+    "AI_ENABLED": "true",
+    "NEXT_PUBLIC_SUPABASE_URL": "https://utuhiewrwzumhwhdmeuh.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_-Z02R6BK95reXNRD3WbbtQ_Vpals3VR",
+    "NEXT_PUBLIC_GOOGLE_CLIENT_ID": "508514149239-s8ubgbr7ikf871vc88t3va7r6b7cmca4.apps.googleusercontent.com",
+    "SUPABASE_JWKS_URL": "https://utuhiewrwzumhwhdmeuh.supabase.co/auth/v1/.well-known/jwks.json"
+  },
 
   "build": {
     "command": "npm run cf:build"

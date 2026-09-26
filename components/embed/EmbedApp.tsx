@@ -14,11 +14,11 @@ import {
   Trophy,
 } from "lucide-react";
 
-import CountryExplorer from "@/components/Tools/CountryExplorer";
-import UniversityExplorer from "@/components/Tools/UniversityExplorer";
-import ScholarshipExplorer from "@/components/Tools/ScholarshipExplorer";
-import CostCalculator from "@/components/Tools/CostCalculator";
-import EligibilityChecker from "@/components/Tools/EligibilityChecker";
+import CountryExplorer from "@/components/study-tools/CountryExplorer";
+import UniversityExplorer from "@/components/study-tools/UniversityExplorer";
+import ScholarshipExplorer from "@/components/study-tools/ScholarshipExplorer";
+import CostCalculator from "@/components/study-tools/CostCalculator";
+import EligibilityChecker from "@/components/study-tools/EligibilityChecker";
 import FutureAtlasAI from "@/components/ai/FutureAtlasAI";
 
 const embedTools = [
