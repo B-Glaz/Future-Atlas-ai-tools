@@ -1,11 +1,11 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-
-if (!url || !key) throw new Error("Supabase runtime configuration is missing.");
-const supabaseUrl = url;
-const supabaseKey = key;
+function publicConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key) throw new Error("Supabase runtime configuration is missing.");
+  return { url, key };
+}
 
 function opaqueKeyFetch(apiKey: string): typeof fetch {
   return (input, init) => {
@@ -28,28 +28,46 @@ function clientOptions(apiKey: string, extraHeaders?: Record<string, string>) {
   };
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey, {
-  global: { fetch: opaqueKeyFetch(supabaseKey) },
+let browserClient: SupabaseClient | undefined;
+
+function browserSupabase() {
+  if (!browserClient) {
+    const { url, key } = publicConfig();
+    browserClient = createClient(url, key, { global: { fetch: opaqueKeyFetch(key) } });
+  }
+  return browserClient;
+}
+
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, property) {
+    const client = browserSupabase();
+    const value = client[property as keyof SupabaseClient];
+    return typeof value === "function" ? value.bind(client) : value;
+  },
 });
 
 export function createPublicSupabase() {
-  return createClient(supabaseUrl, supabaseKey, clientOptions(supabaseKey));
+  const { url, key } = publicConfig();
+  return createClient(url, key, clientOptions(key));
 }
 
 export function createAdminSupabase() {
+  const { url } = publicConfig();
   const secret = process.env.SUPABASE_SECRET_KEY;
   if (!secret) throw new Error("SUPABASE_SECRET_KEY is not configured.");
-  return createClient(supabaseUrl, secret, clientOptions(secret));
+  return createClient(url, secret, clientOptions(secret));
 }
 
 export function createRequestSupabase(accessToken: string) {
-  return createClient(supabaseUrl, supabaseKey, clientOptions(supabaseKey, { Authorization: `Bearer ${accessToken}` }));
+  const { url, key } = publicConfig();
+  return createClient(url, key, clientOptions(key, { Authorization: `Bearer ${accessToken}` }));
 }
 
 export function createAccessTokenSupabase(accessToken: string) {
+  const { url } = publicConfig();
   const secret = process.env.SUPABASE_SECRET_KEY;
   if (!secret) throw new Error("SUPABASE_SECRET_KEY is not configured.");
-  return createClient(supabaseUrl, secret, clientOptions(secret, { "x-future-atlas-token": accessToken }));
+  return createClient(url, secret, clientOptions(secret, { "x-future-atlas-token": accessToken }));
 }
 
 export type { SupabaseClient };
