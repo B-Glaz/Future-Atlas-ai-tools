@@ -41,7 +41,7 @@ const stepQuestions = [
 ];
 
 const stepDescriptions = [
-  "Choose your preferred destination and we&apos;ll look for relevant funding opportunities.",
+  "Choose your preferred destination and we'll look for relevant funding opportunities.",
   "Select your field of study to improve the relevance of your scholarship matches.",
   "Your academic profile helps us estimate which opportunities may be a good fit.",
 ];
