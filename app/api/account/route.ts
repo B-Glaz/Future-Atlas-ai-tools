@@ -33,7 +33,7 @@ export const DELETE = withRequestLog(async function DELETE(request: NextRequest)
   if (auth.kind !== "session") return NextResponse.json({ error: "Sign in to delete this account." }, { status: 403 });
   try {
     const admin = createAdminSupabase();
-    const tables = ["future_atlas_history_backups", "future_atlas_consent_log", "future_atlas_events", "future_atlas_request_logs", "future_atlas_ai_usage", "future_atlas_ai_reservations", "future_atlas_api_key_access", "future_atlas_api_tokens", "future_atlas_profiles"] as const;
+    const tables = ["future_atlas_history_backups", "future_atlas_consent_log", "future_atlas_events", "future_atlas_request_logs", "future_atlas_ai_usage", "future_atlas_ai_reservations", "future_atlas_api_key_access", "future_atlas_api_keys", "future_atlas_api_tokens", "future_atlas_profiles"] as const;
     for (const table of tables) {
       const { error } = await admin.from(table).delete().eq("user_id", auth.user.id);
       if (error && error.code !== "PGRST205" && error.code !== "42P01") return NextResponse.json({ error: "Account data deletion failed." }, { status: 503 });

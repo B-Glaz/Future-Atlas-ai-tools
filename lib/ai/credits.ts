@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import type { User } from "@supabase/supabase-js";
 
+import { authenticateApiKey, presentedApiKey } from "@/lib/auth/api-key";
 import { isTenantApiKey, isUserAccessToken, resolveRequestAuth } from "@/lib/auth/request-auth";
 import { inspectSignedToken } from "@/lib/auth/signed-tokens";
 import { creditQuarters, secondsUntilKolkataMidnight } from "@/lib/ai/credit-policy";
@@ -68,6 +69,28 @@ export async function consumeCredit(
   mode: string,
   requestHash: string
 ): Promise<Authorization> {
+  const apiKeyHeader = presentedApiKey(request);
+  if (apiKeyHeader) {
+    const principal = await authenticateApiKey(request);
+    if (!principal.ok) throw new CreditError(principal.error, principal.status, principal.code, principal.status === 503 ? 30 : undefined);
+    if (!principal.permissions.includes("ai:generate")) throw new CreditError("Insufficient permissions", 403, "FA_FORBIDDEN");
+    const requestId = crypto.randomUUID();
+    const idempotencyKey = request.headers.get("idempotency-key")?.trim() || requestId;
+    try {
+      const decision = await authorizeApiKey({
+        userId: principal.userId,
+        mode,
+        requestHash,
+        idempotencyKey,
+        apiKeyHash: principal.keyHash,
+      });
+      return { ...decision, apiKey: principal.keyHash, mode, userId: principal.userId };
+    } catch (error) {
+      if (isMissingTable(error as { code?: string; message?: string })) throw creditError("FA_SCHEMA_PENDING");
+      throw creditError(error instanceof Error ? error.message : "FA_ADMISSION_FAILED");
+    }
+  }
+
   const authorization = request.headers.get("authorization");
   const accessToken = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
   if (!accessToken) throw new CreditError("Sign in or provide a valid API key.", 401, "FA_AUTH_REQUIRED");

@@ -1,6 +1,8 @@
 import { after, type NextRequest } from "next/server";
 
+import { authenticateApiKey, presentedApiKey } from "@/lib/auth/api-key";
 import { isTenantApiKey, isUserAccessToken, resolveRequestAuth } from "@/lib/auth/request-auth";
+import { isFaApiKey } from "@/lib/platform/api-keys/format";
 import { recordApiKeyAccess } from "@/lib/platform/api-keys/access";
 import { getClientIp } from "@/lib/security/embed-utils";
 import { createAdminSupabase } from "@/lib/supabase";
@@ -60,11 +62,24 @@ async function persistRequestLog(
   if (!process.env.SUPABASE_SECRET_KEY) return;
 
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() || "";
+  const apiKey = presentedApiKey(request);
   const admin = createAdminSupabase();
   let authType: "user" | "api_key" | "anonymous" = "anonymous";
   let userId: string | null = null;
 
-  if (isTenantApiKey(token) || isUserAccessToken(token)) {
+  if (apiKey) {
+    authType = "api_key";
+    const principal = await authenticateApiKey(request);
+    if (principal.ok) userId = principal.userId;
+    if (isFaApiKey(apiKey)) {
+      await recordApiKeyAccess({
+        token: apiKey,
+        userId,
+        path: request.nextUrl.pathname,
+        ip: getClientIp(request.headers),
+      });
+    }
+  } else if (isTenantApiKey(token) || isUserAccessToken(token)) {
     authType = "api_key";
     const auth = isUserAccessToken(token) ? await resolveRequestAuth(request) : null;
     userId = auth?.user.id || null;

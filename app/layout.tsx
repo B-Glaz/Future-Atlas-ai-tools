@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/auth/AuthGate";
-import ConsentManager from "@/components/privacy/ConsentManager";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -33,7 +32,7 @@ export default function RootLayout({
         className="min-h-full flex flex-col"
         suppressHydrationWarning
       >
-        <AuthProvider>{children}<ConsentManager /></AuthProvider>
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

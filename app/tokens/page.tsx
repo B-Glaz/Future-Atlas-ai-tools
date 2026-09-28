@@ -11,10 +11,10 @@ export default function TokensPage() {
           Future Atlas
         </p>
         <h1 className="mt-3 text-3xl font-semibold text-slate-900 sm:text-4xl">
-          API access tokens
+          API keys
         </h1>
         <p className="mt-3 text-sm leading-6 text-slate-500">
-          Generate an access token and refresh token to call Future Atlas APIs without staying signed in through the browser.
+          Create and manage API keys for accessing the API. Each key is shown once. Website sign-in is separate and still uses your Google session.
         </p>
         <div className="mt-8">
           <ProtectedTool>

@@ -1,6 +1,23 @@
 # Future Atlas AI - Project Memory
 
-Last verified: 2026-09-19 (Asia/Kolkata)
+Last full browser verification: 2026-09-19 (Asia/Kolkata). Architecture updated 2026-09-28. The new API-key table and Google sign-in are not live-verified.
+
+## 2026-09-28 Local UI hydration fix
+
+- Homepage buttons rendered but did not respond locally because the shared CSP blocked webpack/React Refresh `eval`, aborting client hydration. Native form controls still appeared usable because they do not require React event handlers.
+- `lib/security/headers.ts` now permits `'unsafe-eval'` only when `NODE_ENV=development`. Production CSP remains unchanged and does not contain `'unsafe-eval'`.
+- Browser-verified locally: homepage tool cards and **Ask Future Atlas AI** open the Google sign-in dialog. `npm run lint`, `npm test`, and `npm run build` pass. A production server response on port 3100 was verified to retain the strict CSP.
+
+## 2026-09-28 API keys and sign-in
+
+- Website users still sign in with Google. Supabase keeps the session access token and refresh token. That flow was not replaced and does not authenticate `POST /api/v1/ai`.
+- API consumers use one opaque key prefixed `FA_AiT_`. The key itself is the credential. It is not a JWT, and a successful API call does not mint an access token or a refresh token.
+- A signed-in user creates a key at `/tokens` through `POST /api/api-keys`. The complete key is returned once. `public.future_atlas_api_keys` stores a SHA-256 `key_hash` and a short `key_prefix` such as `FA_AiT_7f83`. The plaintext secret is never stored, logged, or listed later. Permissions are set on the server to `ai:generate`. A user can have 10 active keys. Expiration is never, 30 days, 90 days, 1 year, or a custom date. Revoke sets `revoked_at` and leaves the row. Replace inserts a new key, then revokes the old one.
+- `POST /api/v1/ai` reads `X-API-Key`. Missing key: 401 `API key required`. Unknown or revoked: 401 `Invalid API key`. Expired: 401 `API key expired`. Missing `ai:generate`: 403 `Insufficient permissions`. Each key is limited to 30 requests per minute, in addition to the account API quota of 200 per Asia/Kolkata day and 10 per hour.
+- The older `fa_atk_` / `fa_rtk_` routes remain in code: `POST/GET/DELETE /api/tokens`, `POST /api/tokens/refresh`, and `POST /api/tokens/validate`. They are not the documented client contract. `docs/client-api.md` and `GET /api/v1/openapi` describe `FA_AiT_` and `/api/api-keys`.
+- Apply `supabase/migrations/20260928_future_atlas_api_keys.sql` before creating keys. It was not applied on 2026-09-28. A direct query from this machine failed with `TypeError: fetch failed`, so the remote table was not confirmed. Until the table exists, key management and API-key authentication return 503 `FA_SCHEMA_PENDING` when Postgres reports a missing table.
+- Sign-out is immediate. The header no longer asks to back up history or mentions cookies. `components/privacy/ConsentManager.tsx` still exists and is not mounted in `app/layout.tsx`.
+- Google sign-in is meant to show the returned email and wait for **Continue with that email** before `signInWithIdToken`. The button receives a SHA-256 nonce; Supabase receives the raw nonce. On 2026-09-28 the local sign-in control did not open the dialog in the automation browser because the page did not hydrate, and the user reported sign-in still failing. Do not treat Google login as verified after this change.
 
 ## 2026-09-22 AI provider diagnosis
 
@@ -24,9 +41,9 @@ Future Atlas AI is a study-abroad planning application with five AI tools, a stu
 
 User routes: `/`, `/countries`, `/universities`, `/scholarships`, `/cost-calculator`, `/eligibility`, `/guidance`, `/embed`, `/tokens`.
 
-API routes: `/api/ai`, `/api/account`, `/api/consent`, `/api/credits`, `/api/events`, `/api/tokens`, `/api/tokens/refresh`, `/api/tokens/validate`, `/api/v1/ai`, `/api/v1/health`, `/api/v1/openapi`, `/api/v1/tenants`. Every API handler is wrapped with `withRequestLog` (`lib/security/request-log.ts`), which writes method, path, status, duration, origin, IP, and verified `user_id` to `public.future_atlas_request_logs` after the response via Next.js `after()`. Bodies and tokens are not stored. Writes use `SUPABASE_SECRET_KEY`; missing secret skips persistence. Apply `supabase/migrations/20260922_future_atlas_request_logs.sql` before expecting rows.
+API routes: `/api/ai`, `/api/account`, `/api/api-keys`, `/api/consent`, `/api/credits`, `/api/events`, `/api/tokens`, `/api/tokens/refresh`, `/api/tokens/validate`, `/api/v1/ai`, `/api/v1/health`, `/api/v1/openapi`, `/api/v1/tenants`. Every API handler is wrapped with `withRequestLog` (`lib/security/request-log.ts`), which writes method, path, status, duration, origin, IP, and verified `user_id` to `public.future_atlas_request_logs` after the response via Next.js `after()`. Bodies and secrets are not stored. An `FA_AiT_` key is logged as its short prefix plus hash in `future_atlas_api_key_access`. Writes use `SUPABASE_SECRET_KEY`; missing secret skips persistence. Apply `supabase/migrations/20260922_future_atlas_request_logs.sql` before expecting rows.
 
-Signed-in users can mint personal API tokens at `/tokens`. `POST /api/tokens` issues `fa_atk_` access (1 hour) and `fa_rtk_` refresh (30 days) hashes stored in private tables; plaintext is shown once. `POST /api/tokens/validate`, `POST /api/tokens/refresh`, and `DELETE /api/tokens` inspect, rotate access, and revoke. A valid access token is accepted as `Authorization: Bearer` on user backend APIs through `resolveRequestAuth`. Generating a new pair or deleting the account requires the Google session, not a personal access token. Apply `supabase/migrations/20260923_future_atlas_user_api_tokens.sql` before this works.
+Signed-in users create personal API keys at `/tokens`. `POST /api/api-keys` returns one `FA_AiT_` secret once. Later responses show only the prefix, name, dates, and status. `GET /api/api-keys` lists keys. `DELETE /api/api-keys` revokes one. Rotate sends `rotateId` on `POST /api/api-keys`. Management requires the Google session; an API key cannot create keys. `POST /api/v1/ai` accepts only `X-API-Key`. Website tools still call `/api/ai` with the session bearer. The older `fa_atk_` / `fa_rtk_` pair can still be issued by `/api/tokens` and accepted by `resolveRequestAuth`, but that pair is not the client API. Apply `supabase/migrations/20260923_future_atlas_user_api_tokens.sql` for the old pair and `supabase/migrations/20260928_future_atlas_api_keys.sql` for `FA_AiT_` keys. Account deletion also deletes `future_atlas_api_keys`.
 
 Repository: https://github.com/B-Glaz/Future-Atlas-ai-tools.git
 
@@ -46,9 +63,10 @@ Production URL: https://future-atlas-ai-tools.onewindowvcard.workers.dev/
 Authentication is active for tool pages. The homepage remains explorable. Clicking a tool or the credit sign-in control opens `components/auth/AuthGate.tsx`.
 
 Auth options:
-- Google Identity Services button exchanging Google's ID token through Supabase `signInWithIdToken`.
+- Google Identity Services button. After Google returns an ID token, the dialog shows that email and waits for Continue before `signInWithIdToken`. The website session is still Supabase access and refresh tokens.
+- Separate `FA_AiT_` API keys for `POST /api/v1/ai`. See the 2026-09-28 section.
 
-Google-only authentication was verified locally and in production with `blessononewindow@gmail.com`. Google is enabled and Email is disabled in the active Supabase project.
+Google-only authentication was verified locally and in production with `blessononewindow@gmail.com` on 2026-09-19. Google is enabled and Email is disabled in the active Supabase project. The 2026-09-28 Continue step has not been verified with a completed login.
 
 Credits:
 - 30 credits reset at Asia/Kolkata midnight.
@@ -70,8 +88,8 @@ AI:
 UI:
 - Homepage design is preserved.
 - Header logo links home; profile, delete, backup, and clear-history toolbar icons are absent.
-- The right header area shows sign-in, live credits, zero, pending, or unavailable state.
-- Logout uses a confirmation dialog with backup-and-sign-out, sign-out-without-backup, and cancel.
+- The right header area shows sign-in, live credits, zero, pending, or unavailable state. A signed-in user also sees the API keys link and sign-out.
+- Sign-out calls `signOut()` immediately. There is no backup prompt and no cookie prompt.
 - Option sets over four choices use `4 -> More -> remaining options`, including Other where supported.
 - Custom typo suggestions work; `Pharmcy` suggests `Pharmacy`.
 - Tool layouts are centered and responsive.
@@ -79,12 +97,11 @@ UI:
 - Result history is device-side and reviewing it does not call AI.
 
 Consent and analytics:
-- Necessary and additional consent levels are implemented by `components/ConsentManager.tsx`.
-- Reject explains that necessary storage is required; accept enables both levels; details explains both categories.
-- Consent audit writes to `/api/consent`; events write to `/api/events`.
+- The cookie banner is not shown. `components/privacy/ConsentManager.tsx` is unused. `/api/consent` remains.
+- Events still write to `/api/events`.
 - Without `SUPABASE_SECRET_KEY`, these endpoints intentionally return 204 and do not persist.
-- PageSense loads only for additional consent.
-- Device history is account-scoped. Explicit backup uses `/api/account`; logout without backup does not upload it.
+- PageSense loads only for additional consent, which the banner no longer collects.
+- Device history is account-scoped. Explicit backup still exists on `POST /api/account`. Sign-out does not upload it.
 
 Guidance:
 - `/guidance` renders the supplied Zoho public form directly in a styled, rounded iframe. Zoho now owns field input and final submission; the app no longer attempts a cross-origin prefill bridge.
@@ -93,7 +110,7 @@ Guidance:
 
 Tenant API and embedding:
 - `/api/v1/openapi` serves OpenAPI 3.1 documentation.
-- `/api/v1/ai` requires a tenant key, exact approved Origin, and idempotency key.
+- `/api/v1/ai` requires an `FA_AiT_` key in `X-API-Key`. Idempotency-Key is still used for retries. This is separate from tenant `fa_test_` / `fa_live_` keys.
 - `/api/v1/tenants` requires a Supabase user session and manages tenant credentials/domains through database RPCs.
 - `/embed` is denied by default. `custom-worker.mjs` applies per-request `frame-ancestors`; unauthorized direct access shows Access Restricted.
 - The tenant API has not yet been end-to-end tested with a real `fa_test_` or `fa_live_` credential.
@@ -110,7 +127,8 @@ The migrations provide account/profile provisioning, quarter-credit accounting, 
 
 Pending apply:
 - `supabase/migrations/20260922_future_atlas_request_logs.sql`
-- `supabase/migrations/20260923_future_atlas_user_api_tokens.sql` (personal access/refresh tokens, acting-user helper, token RPCs, and `future_atlas_delete_my_data` now deletes those tokens).
+- `supabase/migrations/20260923_future_atlas_user_api_tokens.sql` (legacy personal access/refresh tokens, acting-user helper, token RPCs, and `future_atlas_delete_my_data` deletes those tokens).
+- `supabase/migrations/20260928_future_atlas_api_keys.sql` (`public.future_atlas_api_keys`, RLS enabled, grants revoked from `public`, `anon`, and `authenticated`, index on `user_id, created_at desc`). Not applied as of 2026-09-28.
 
 Supabase leaked-password protection is a dashboard setting and remains **Needs Verification / Enable in dashboard**.
 
@@ -185,6 +203,8 @@ Incomplete verification:
 4. Replace guest in-memory throttling with shared durable storage before bulk anonymous traffic.
 5. Configure Sentry variables and rerun error inspection; restore Codex Security credits and rerun the deep scan.
 6. Re-run production persistence tests after binding `SUPABASE_SECRET_KEY`.
+7. Apply `supabase/migrations/20260928_future_atlas_api_keys.sql`, then verify create-once, masked list, revoke, and expired-key rejection.
+8. Finish a local Google login as `blessononewindow@gmail.com` through the Continue step. The 2026-09-28 attempt did not open the sign-in dialog.
 
 ## Development Rules
 

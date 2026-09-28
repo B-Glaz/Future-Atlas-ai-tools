@@ -1,6 +1,10 @@
 # Future Atlas client API
 
-Use this from your own server. Keep the access token in a secret store. Do not put it in browser code, a mobile app binary, or a public page.
+Use this from your own server. Keep the API key in a secret store. Do not put it in browser code, a public JavaScript bundle, or a Git repository.
+
+```text
+FA_AI_API_KEY=FA_AiT_xxxxxxxxxxxxxxxxx
+```
 
 Base URL:
 
@@ -10,39 +14,59 @@ https://future-atlas-ai-tools.onewindowvcard.workers.dev
 
 A machine-readable copy of the same contract is at `GET /api/v1/openapi`.
 
-## 1. Get a token
+## Authentication
 
-Sign in on the Future Atlas site, open **Tokens**, and generate a pair. Generating a new pair revokes the previous pair for that account.
+API calls use one API key. They do not use an access token or a refresh token, and a successful API call does not mint either one.
 
-You can also create the pair from a signed-in browser session:
+Sign in on the Future Atlas site, open **API keys**, and create a key. The complete key is shown once and starts with `FA_AiT_`. After that, the server stores only a hash. If you lose the key, create a new one or replace the old one. Replacing revokes the previous key.
+
+Send the key on every API request:
 
 ```http
-POST /api/tokens
+X-API-Key: FA_AiT_xxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-The response is `201`:
+```bash
+curl https://future-atlas-ai-tools.onewindowvcard.workers.dev/api/v1/ai \
+  -H "X-API-Key: FA_AiT_xxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json"
+```
+
+Website sign-in is separate. It still uses the Google session and its access and refresh tokens. Do not send those tokens to this API.
+
+Create a key from a signed-in browser session:
+
+```http
+POST /api/api-keys
+Authorization: Bearer <website session>
+Content-Type: application/json
+
+{ "name": "Production API", "expiresIn": "never" }
+```
+
+`expiresIn` is `never`, `30d`, `90d`, `1y`, or `custom`. A custom expiration also sends `expiresAt` as `YYYY-MM-DD`.
+
+The response is `201` and includes `api_key` only this once:
 
 ```json
 {
-  "access_token": "fa_atk_...",
-  "refresh_token": "fa_rtk_...",
-  "access_expires_at": "2026-09-26T16:00:00.000Z",
-  "refresh_expires_at": "2026-10-26T15:00:00.000Z"
+  "id": "...",
+  "name": "Production API",
+  "api_key": "FA_AiT_...",
+  "key_prefix": "FA_AiT_7f83",
+  "created_at": "2026-09-28T00:00:00.000Z",
+  "expires_at": null,
+  "permissions": ["ai:generate"]
 }
 ```
 
-| Token | Prefix | Lifetime | Use |
-| --- | --- | --- | --- |
-| Access token | `fa_atk_` | 1 hour | `Authorization: Bearer` on AI calls |
-| Refresh token | `fa_rtk_` | 30 days | Mint a new access token |
+`GET /api/api-keys` lists names, prefixes, dates, and status. It does not return the secret or the hash. `DELETE /api/api-keys` with `{ "id": "..." }` revokes a key immediately. A revoked or unknown key then returns `401` with `Invalid API key`. An expired key returns `401` with `API key expired`.
 
-The access token and refresh token are shown once. Store both.
-
-## 2. Call the AI
+## Call the AI
 
 ```http
 POST /api/v1/ai
-Authorization: Bearer fa_atk_...
+X-API-Key: FA_AiT_...
 Content-Type: application/json
 Idempotency-Key: 7d54130d-9a9e-4a49-a660-91ca5b53d7a1
 ```
@@ -101,59 +125,9 @@ Send `Accept: text/event-stream` or `"stream": true`. The body is server-sent ev
 
 Send the same `Idempotency-Key` only when you retry the same request. The key must be 8 to 128 characters. A new question needs a new key. Reusing a key for a different body returns `409` with code `FA_IDEMPOTENCY_CONFLICT`. If the first call is still running, the same key returns `409` with code `AI_REQUEST_IN_PROGRESS` and `Retry-After: 2`. A completed call with the same key returns the saved result and the header `Idempotency-Replayed: true`.
 
-## 3. Refresh the access token
-
-```http
-POST /api/tokens/refresh
-Content-Type: application/json
-
-{ "refreshToken": "fa_rtk_..." }
-```
-
-A valid refresh token returns a new access token. The refresh token itself stays the same until it expires or you generate a new pair.
-
-```json
-{
-  "access_token": "fa_atk_...",
-  "access_expires_at": "2026-09-26T17:00:00.000Z"
-}
-```
-
-## 4. Check a token
-
-```http
-POST /api/tokens/validate
-Content-Type: application/json
-
-{ "token": "fa_atk_..." }
-```
-
-You can also send the token as `Authorization: Bearer`.
-
-A usable token returns:
-
-```json
-{ "valid": true, "token_type": "access", "expires_at": "2026-09-26T16:00:00.000Z" }
-```
-
-Anything else returns `{ "valid": false }`.
-
-Signed-in status, without revealing the secret, is `GET /api/tokens`.
-
-## 5. Revoke
-
-```http
-DELETE /api/tokens
-Content-Type: application/json
-
-{ "accessToken": "fa_atk_...", "refreshToken": "fa_rtk_..." }
-```
-
-To revoke every token for the signed-in account, send `{ "all": true }` with the website session. The response is `{ "revoked": true }`.
-
 ## Limits
 
-API calls allow **200 requests per Asia/Kolkata calendar day** and **10 requests per hour**. One request can be in flight for an account at a time. These limits are separate from the 30 daily credits shown on the website.
+API calls allow **200 requests per Asia/Kolkata calendar day** and **10 requests per hour** for the account that owns the key. One API request can be in flight for an account at a time. These limits are separate from the 30 daily credits shown on the website. Each key is also limited to 30 requests per minute.
 
 `creditsRemaining` on an API response is how many of the 200 daily API calls are left after this one.
 
@@ -161,10 +135,8 @@ Other limits:
 
 | Route | Limit |
 | --- | --- |
-| `POST /api/v1/ai` | 30 requests per minute, body up to 64,000 characters |
-| `POST /api/tokens` | 5 per minute |
-| `POST /api/tokens/refresh` | 10 per minute |
-| `POST /api/tokens/validate` | 20 per minute |
+| `POST /api/v1/ai` | 30 requests per minute per API key, body up to 64,000 characters |
+| `POST /api/api-keys` | 5 per minute |
 
 A limit response is `429` and may include `Retry-After`.
 
@@ -176,7 +148,7 @@ AI and health errors use this shape:
 {
   "error": {
     "code": "FA_INVALID_API_KEY",
-    "message": "Invalid or expired API key.",
+    "message": "Invalid API key",
     "retryable": false,
     "requestId": "..."
   }
@@ -189,8 +161,10 @@ AI and health errors use this shape:
 | 400 | `INVALID_MODE` | `mode` is not one of the six values |
 | 400 | `INVALID_RESPONSE_FORMAT` | `responseFormat` was sent and is not `structured` |
 | 400 | `FA_INVALID_IDEMPOTENCY_KEY` | Key is shorter than 8 or longer than 128 characters |
-| 401 | `FA_INVALID_API_KEY` | Access token is missing, expired, revoked, or not an `fa_atk_` token |
-| 401 | `FA_AUTH_REQUIRED` | No access token |
+| 401 | `FA_AUTH_REQUIRED` | `X-API-Key` is missing |
+| 401 | `FA_INVALID_API_KEY` | Key is missing, unknown, or revoked |
+| 401 | `FA_API_KEY_EXPIRED` | Key is expired |
+| 403 | `FA_FORBIDDEN` | Key does not include `ai:generate` |
 | 409 | `FA_IDEMPOTENCY_CONFLICT` | This key was already used for a different request |
 | 409 | `AI_REQUEST_IN_PROGRESS` | The same key is still running |
 | 413 | `REQUEST_TOO_LARGE` | Body is over 64,000 characters |
@@ -201,7 +175,7 @@ AI and health errors use this shape:
 | 503 | `AI_DISABLED` | The tool is turned off |
 | 503 | `FA_SCHEMA_PENDING` | The account store is not ready |
 
-Token routes that are not the AI call return a simpler body: `{ "error": "..." }`.
+Key management routes return `{ "error": "..." }`.
 
 ## Readiness
 

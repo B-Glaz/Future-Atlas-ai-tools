@@ -9,8 +9,8 @@ function clientKey(request: NextRequest) {
   return request.headers.get("cf-connecting-ip") || "local";
 }
 
-export function rateLimit(request: NextRequest, name: string, limit: number, windowMs: number) {
-  const key = `${name}:${clientKey(request)}`;
+export function rateLimit(request: NextRequest, name: string, limit: number, windowMs: number, subject?: string) {
+  const key = `${name}:${subject || clientKey(request)}`;
   const now = Date.now();
   const current = buckets.get(key);
   if (!current || current.resetAt <= now) {
@@ -25,8 +25,8 @@ export function rateLimit(request: NextRequest, name: string, limit: number, win
   return { ok: true, retryAfter: 0 };
 }
 
-export function rateLimited(request: NextRequest, name: string, limit: number, windowMs: number) {
-  const result = rateLimit(request, name, limit, windowMs);
+export function rateLimited(request: NextRequest, name: string, limit: number, windowMs: number, subject?: string) {
+  const result = rateLimit(request, name, limit, windowMs, subject);
   if (result.ok) return null;
   return NextResponse.json(
     { error: "Too many requests. Please wait and try again." },
