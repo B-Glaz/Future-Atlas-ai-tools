@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "node scripts/with-public-env.mjs",
+    "build": "node scripts/cloudflare-build.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "node --no-warnings --experimental-strip-types scripts/check-structured-output.mjs && node --no-warnings --experimental-strip-types scripts/check-provider-fallback.mjs",

@@ -18,10 +18,6 @@
     "SUPABASE_JWKS_URL": "https://utuhiewrwzumhwhdmeuh.supabase.co/auth/v1/.well-known/jwks.json"
   },
 
-  "build": {
-    "command": "npm run cf:build"
-  },
-
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
