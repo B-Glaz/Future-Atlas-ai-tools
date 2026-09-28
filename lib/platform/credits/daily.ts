@@ -4,8 +4,8 @@ import { createAdminSupabase } from "@/lib/supabase";
 import { secondsUntilKolkataMidnight } from "@/lib/ai/credit-policy";
 
 export const DAILY_QUARTER_BUDGET = 120;
-export const API_REQUESTS_PER_DAY = 200;
-export const API_REQUESTS_PER_HOUR = 10;
+export const API_REQUESTS_PER_DAY = 1000;
+export const API_REQUESTS_PER_HOUR = 120;
 export const MAX_IN_FLIGHT = 1;
 
 export type CreditDecision = {
@@ -71,8 +71,8 @@ export async function apiUsageCounts(userId: string) {
   const admin = createAdminSupabase();
   const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
   const [day, hour] = await Promise.all([
-    admin.from("future_atlas_ai_reservations").select("id", { count: "exact", head: true }).eq("user_id", userId).not("api_key_hash", "is", null).gte("created_at", kolkataDayStart()),
-    admin.from("future_atlas_ai_reservations").select("created_at").eq("user_id", userId).not("api_key_hash", "is", null).gte("created_at", hourAgo).order("created_at", { ascending: true }),
+    admin.from("future_atlas_ai_reservations").select("id", { count: "exact", head: true }).eq("user_id", userId).not("api_key_hash", "is", null).in("status", ["processing", "completed"]).gte("created_at", kolkataDayStart()),
+    admin.from("future_atlas_ai_reservations").select("created_at").eq("user_id", userId).not("api_key_hash", "is", null).in("status", ["processing", "completed"]).gte("created_at", hourAgo).order("created_at", { ascending: true }),
   ]);
   if (day.error) throw day.error;
   if (hour.error) throw hour.error;
@@ -172,12 +172,13 @@ export async function authorizeApiKey(input: {
     .from("future_atlas_ai_reservations")
     .select("id,status,request_hash,result_payload")
     .eq("user_id", input.userId)
+    .eq("api_key_hash", input.apiKeyHash)
     .eq("idempotency_key", input.idempotencyKey)
     .maybeSingle();
   if (existing.error) throw existing.error;
-  const usage = await apiUsageCounts(input.userId);
   const row = existing.data as ReservationRow | null;
   if (row) {
+    const usage = await apiUsageCounts(input.userId);
     if (row.request_hash !== input.requestHash) throw new Error("FA_IDEMPOTENCY_CONFLICT");
     return {
       requestId: row.id,
@@ -187,6 +188,28 @@ export async function authorizeApiKey(input: {
       replayPayload: row.status === "completed" ? row.result_payload : null,
     };
   }
+  const replayed = await admin
+    .from("future_atlas_ai_reservations")
+    .select("id,status,request_hash,result_payload")
+    .eq("user_id", input.userId)
+    .eq("api_key_hash", input.apiKeyHash)
+    .eq("request_hash", input.requestHash)
+    .eq("status", "completed")
+    .order("completed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (replayed.error) throw replayed.error;
+  if (replayed.data) {
+    const usage = await apiUsageCounts(input.userId);
+    return {
+      requestId: replayed.data.id,
+      cacheScope: `api:${input.userId}`,
+      creditsRemaining: Math.max(0, API_REQUESTS_PER_DAY - usage.today),
+      replayStatus: "completed",
+      replayPayload: replayed.data.result_payload,
+    };
+  }
+  const usage = await apiUsageCounts(input.userId);
   if (usage.hour >= API_REQUESTS_PER_HOUR) throw new Error(`FA_API_HOURLY_LIMIT:${usage.hourRetryAfter}`);
   if (usage.today >= API_REQUESTS_PER_DAY) throw new Error("FA_API_DAILY_LIMIT");
   if (await inflightCount(input.userId, true) >= MAX_IN_FLIGHT) throw new Error("FA_USER_BUSY");

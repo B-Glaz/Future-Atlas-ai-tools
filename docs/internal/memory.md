@@ -2,6 +2,15 @@
 
 Last full browser verification: 2026-09-19 (Asia/Kolkata). Architecture updated 2026-09-28. The new API-key table and Google sign-in are not live-verified.
 
+## 2026-09-28 API-key reliability and origin enforcement
+
+- Current Supabase project resolved from `.env.local`: `utuhiewrwzumhwhdmeuh`. Older project IDs below are historical; deployment variables remain the source of truth.
+- Applied `supabase/migrations/20260928_api_key_allowed_origins.sql` and `20260928_api_key_idempotency_scope.sql`. API keys now require 1-20 exact origins. Public origins require HTTPS; HTTP is accepted only for localhost testing. Requests must match `Origin` or server-supplied `X-Client-Origin`; older keys without origins are denied until replaced. Idempotency keys are scoped to each API key.
+- API allowance is 1,000 generated responses per Asia/Kolkata day, 120 per rolling hour, and 30 requests/minute/key. Failed requests and saved replays do not count. Completed identical requests replay durably by key + request hash with the original request ID and `cached: true`.
+- Local end-to-end verification passed: missing/wrong origin returned 403; authorized origin returned 200; identical replay returned 200 without a second generation; country, university, scholarship, cost, eligibility, and mentor modes all returned 200. Lint, contract tests, and production Next.js build pass.
+- Mentor instructions now prohibit unsupported exact current visa funds, fees, processing times, deadlines, rankings, tuition, work rights, and immigration rules.
+- Test keys `Origin policy verification`, `Codex API verification`, and `test` were revoked after verification. Database verification found zero active keys with those names, and `/api/v1/ai` rejected the formerly valid restricted key with HTTP 401.
+
 ## 2026-09-28 Local UI hydration fix
 
 - Homepage buttons rendered but did not respond locally because the shared CSP blocked webpack/React Refresh `eval`, aborting client hydration. Native form controls still appeared usable because they do not require React event handlers.
@@ -13,9 +22,9 @@ Last full browser verification: 2026-09-19 (Asia/Kolkata). Architecture updated 
 - Website users still sign in with Google. Supabase keeps the session access token and refresh token. That flow was not replaced and does not authenticate `POST /api/v1/ai`.
 - API consumers use one opaque key prefixed `FA_AiT_`. The key itself is the credential. It is not a JWT, and a successful API call does not mint an access token or a refresh token.
 - A signed-in user creates a key at `/tokens` through `POST /api/api-keys`. The complete key is returned once. `public.future_atlas_api_keys` stores a SHA-256 `key_hash` and a short `key_prefix` such as `FA_AiT_7f83`. The plaintext secret is never stored, logged, or listed later. Permissions are set on the server to `ai:generate`. A user can have 10 active keys. Expiration is never, 30 days, 90 days, 1 year, or a custom date. Revoke sets `revoked_at` and leaves the row. Replace inserts a new key, then revokes the old one.
-- `POST /api/v1/ai` reads `X-API-Key`. Missing key: 401 `API key required`. Unknown or revoked: 401 `Invalid API key`. Expired: 401 `API key expired`. Missing `ai:generate`: 403 `Insufficient permissions`. Each key is limited to 30 requests per minute, in addition to the account API quota of 200 per Asia/Kolkata day and 10 per hour.
+- `POST /api/v1/ai` reads `X-API-Key`. Missing key: 401 `API key required`. Unknown or revoked: 401 `Invalid API key`. Expired: 401 `API key expired`. Missing `ai:generate`: 403 `Insufficient permissions`. Each key is limited to 30 requests per minute, in addition to the account API quota of 1,000 generated responses per Asia/Kolkata day and 120 per rolling hour.
 - The older `fa_atk_` / `fa_rtk_` routes remain in code: `POST/GET/DELETE /api/tokens`, `POST /api/tokens/refresh`, and `POST /api/tokens/validate`. They are not the documented client contract. `docs/client-api.md` and `GET /api/v1/openapi` describe `FA_AiT_` and `/api/api-keys`.
-- Apply `supabase/migrations/20260928_future_atlas_api_keys.sql` before creating keys. It was not applied on 2026-09-28. A direct query from this machine failed with `TypeError: fetch failed`, so the remote table was not confirmed. Until the table exists, key management and API-key authentication return 503 `FA_SCHEMA_PENDING` when Postgres reports a missing table.
+- `supabase/migrations/20260928_future_atlas_api_keys.sql` and `supabase/migrations/20260928_api_key_allowed_origins.sql` are applied in the current Supabase project.
 - Sign-out is immediate. The header no longer asks to back up history or mentions cookies. `components/privacy/ConsentManager.tsx` still exists and is not mounted in `app/layout.tsx`.
 - Google sign-in is meant to show the returned email and wait for **Continue with that email** before `signInWithIdToken`. The button receives a SHA-256 nonce; Supabase receives the raw nonce. On 2026-09-28 the local sign-in control did not open the dialog in the automation browser because the page did not hydrate, and the user reported sign-in still failing. Do not treat Google login as verified after this change.
 
@@ -117,7 +126,7 @@ Tenant API and embedding:
 
 ## Database
 
-Active Supabase project ID: `qkxrzieifutndosqjzsh`. Treat deployment variables as source of truth; the older `nfcixmyfqhpenbocplaa` project is not used by the application.
+Active local Supabase project ID: `utuhiewrwzumhwhdmeuh`. Treat deployment variables as source of truth; older project IDs in historical notes are not used by the current local application.
 
 Applied and live-verified on 2026-09-18:
 - `supabase/migrations/20260917_future_atlas_user_credit_quarters.sql`
@@ -128,7 +137,7 @@ The migrations provide account/profile provisioning, quarter-credit accounting, 
 Pending apply:
 - `supabase/migrations/20260922_future_atlas_request_logs.sql`
 - `supabase/migrations/20260923_future_atlas_user_api_tokens.sql` (legacy personal access/refresh tokens, acting-user helper, token RPCs, and `future_atlas_delete_my_data` deletes those tokens).
-- `supabase/migrations/20260928_future_atlas_api_keys.sql` (`public.future_atlas_api_keys`, RLS enabled, grants revoked from `public`, `anon`, and `authenticated`, index on `user_id, created_at desc`). Not applied as of 2026-09-28.
+- `supabase/migrations/20260928_future_atlas_api_keys.sql` and `20260928_api_key_allowed_origins.sql` are applied in the current project.
 
 Supabase leaked-password protection is a dashboard setting and remains **Needs Verification / Enable in dashboard**.
 
@@ -203,7 +212,7 @@ Incomplete verification:
 4. Replace guest in-memory throttling with shared durable storage before bulk anonymous traffic.
 5. Configure Sentry variables and rerun error inspection; restore Codex Security credits and rerun the deep scan.
 6. Re-run production persistence tests after binding `SUPABASE_SECRET_KEY`.
-7. Apply `supabase/migrations/20260928_future_atlas_api_keys.sql`, then verify create-once, masked list, revoke, and expired-key rejection.
+7. Expired-key rejection remains to be tested. Create-once, masked list, origin rejection, generation, replay, and revocation are verified.
 8. Finish a local Google login as `blessononewindow@gmail.com` through the Continue step. The 2026-09-28 attempt did not open the sign-in dialog.
 
 ## Development Rules

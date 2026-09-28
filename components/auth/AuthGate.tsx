@@ -151,7 +151,10 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
   const [googleAttempt, setGoogleAttempt] = useState(0);
   const googleButton = useRef<HTMLDivElement>(null);
   const onVerifiedRef = useRef(onVerified);
-  onVerifiedRef.current = onVerified;
+
+  useEffect(() => {
+    onVerifiedRef.current = onVerified;
+  }, [onVerified]);
 
   useEffect(() => {
     if (!googleClientId || pending || !googleButton.current) return;

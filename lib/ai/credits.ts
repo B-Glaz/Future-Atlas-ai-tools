@@ -54,7 +54,7 @@ function creditError(message: string) {
   const publicMessage = code === "FA_DAILY_LIMIT"
     ? `Daily AI credits exhausted. Credits renew in ${hours} hours.`
     : code === "FA_API_DAILY_LIMIT"
-      ? `API daily limit of 200 requests is reached. It renews in ${hours} hours.`
+      ? `API daily limit of 1,000 requests is reached. It renews in ${hours} hours.`
       : configuredMessage;
   return new CreditError(publicMessage, status, code, retryAfter);
 }
@@ -133,7 +133,7 @@ export async function completeCreditRequest(
   authorization: Authorization,
   status: "completed" | "failed",
   payload?: Record<string, unknown>,
-  _details?: { errorCode?: string; provider?: string; durationMs?: number }
+  details?: { errorCode?: string; provider?: string; durationMs?: number }
 ) {
   if (!authorization.userId) return;
   try {
@@ -149,6 +149,8 @@ export async function completeCreditRequest(
     console.error(JSON.stringify({
       event: "ai_request_completion_failed",
       requestId: authorization.requestId,
+      provider: details?.provider,
+      failure: details?.errorCode,
       code: error instanceof Error ? error.message.slice(0, 120) : "unknown",
     }));
   }

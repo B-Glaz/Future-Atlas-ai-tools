@@ -14,6 +14,7 @@ type ApiKeyRecord = {
   revoked_at: string | null;
   last_used_at: string | null;
   permissions: string[];
+  allowed_origins: string[];
   status: "active" | "revoked" | "expired";
 };
 
@@ -24,6 +25,7 @@ type IssuedKey = {
   key_prefix: string;
   created_at: string;
   expires_at: string | null;
+  allowed_origins: string[];
 };
 
 type ExpiresIn = "never" | "30d" | "90d" | "1y" | "custom";
@@ -64,6 +66,7 @@ export default function ApiTokensPanel() {
   const [name, setName] = useState("");
   const [expiresIn, setExpiresIn] = useState<ExpiresIn>("never");
   const [customDate, setCustomDate] = useState("");
+  const [origins, setOrigins] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [creating, setCreating] = useState(false);
@@ -76,6 +79,8 @@ export default function ApiTokensPanel() {
   }, []);
 
   useEffect(() => {
+    // Initial server state; subsequent refreshes happen after key actions.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadKeys().catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not load API keys."));
   }, [loadKeys]);
 
@@ -91,10 +96,11 @@ export default function ApiTokensPanel() {
     }
   }
 
-  async function createKey(options?: { rotateId?: string; name?: string; expiresIn?: ExpiresIn; expiresAt?: string }) {
+  async function createKey(options?: { rotateId?: string; name?: string; expiresIn?: ExpiresIn; expiresAt?: string; origins?: string[] }) {
     const nextName = options?.name ?? name;
     const nextExpires = options?.expiresIn ?? expiresIn;
     const nextDate = options?.expiresAt ?? customDate;
+    const allowedOrigins = options?.origins ?? origins.split(/[\n,]+/).map((origin) => origin.trim()).filter(Boolean);
     const response = await fetch("/api/api-keys", {
       method: "POST",
       headers: await sessionHeaders(),
@@ -103,6 +109,7 @@ export default function ApiTokensPanel() {
         expiresIn: nextExpires,
         expiresAt: nextExpires === "custom" ? nextDate : undefined,
         rotateId: options?.rotateId,
+        allowedOrigins,
       }),
     });
     const payload = await response.json().catch(() => null);
@@ -110,6 +117,7 @@ export default function ApiTokensPanel() {
     setIssued(payload);
     setCreating(false);
     setName("");
+    setOrigins("");
     await loadKeys();
   }
 
@@ -141,6 +149,7 @@ export default function ApiTokensPanel() {
               <div>Created: {formatDate(key.created_at)}</div>
               <div>Last used: {relativeTime(key.last_used_at)}</div>
               <div>Expires: {key.expires_at ? formatDate(key.expires_at) : "Never"}</div>
+              <div>Authorized: {key.allowed_origins.length ? key.allowed_origins.join(", ") : "No origins - replace required"}</div>
             </dl>
             {key.status === "active" && (
               <div className="mt-5 flex flex-wrap gap-2">
@@ -157,6 +166,7 @@ export default function ApiTokensPanel() {
                   name: key.name,
                   expiresIn: key.expires_at ? "custom" : "never",
                   expiresAt: key.expires_at?.slice(0, 10),
+                  origins: key.allowed_origins,
                 }))} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60">
                   {busy === `rotate-${key.id}` ? "Replacing…" : "Replace"}
                 </button>
@@ -189,6 +199,11 @@ export default function ApiTokensPanel() {
               <input type="date" value={customDate} onChange={(event) => setCustomDate(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
             </label>
           )}
+          <label className="mt-4 block text-sm font-medium text-slate-700">
+            Authorized website origins
+            <textarea value={origins} onChange={(event) => setOrigins(event.target.value)} rows={3} className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="https://client.example.com" />
+            <span className="mt-1 block text-xs leading-5 text-slate-500">One origin per line. Use http://localhost:3000 for local testing.</span>
+          </label>
           <div className="mt-5 flex gap-2">
             <button type="button" disabled={Boolean(busy)} onClick={() => void run("create", () => createKey())} className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60">
               {busy === "create" ? "Creating…" : "Create API key"}

@@ -16,6 +16,7 @@ export type ApiKeyRecord = {
   revoked_at: string | null;
   last_used_at: string | null;
   permissions: string[];
+  allowed_origins: string[];
   status: "active" | "revoked" | "expired";
 };
 
@@ -28,6 +29,7 @@ type KeyRow = {
   revoked_at: string | null;
   last_used_at: string | null;
   permissions: string[] | null;
+  allowed_origins: string[] | null;
 };
 
 function statusOf(row: Pick<KeyRow, "revoked_at" | "expires_at">): ApiKeyRecord["status"] {
@@ -46,6 +48,7 @@ function present(row: KeyRow): ApiKeyRecord {
     revoked_at: row.revoked_at,
     last_used_at: row.last_used_at,
     permissions: Array.isArray(row.permissions) && row.permissions.length ? row.permissions : [AI_SCOPE],
+    allowed_origins: row.allowed_origins || [],
     status: statusOf(row),
   };
 }
@@ -69,11 +72,24 @@ export function cleanKeyName(value: unknown) {
   return name;
 }
 
+export function cleanAllowedOrigins(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0) throw new Error("Add at least one authorized website origin.");
+  const origins = value.map((entry) => {
+    if (typeof entry !== "string") throw new Error("Use valid website origins.");
+    let url: URL;
+    try { url = new URL(entry.trim()); } catch { throw new Error("Use valid website origins."); }
+    if (url.pathname !== "/" || url.search || url.hash || !["https:", "http:"].includes(url.protocol)) throw new Error("Use origins such as https://example.com without a path.");
+    if (url.protocol === "http:" && !["localhost", "127.0.0.1"].includes(url.hostname)) throw new Error("Public website origins must use HTTPS.");
+    return url.origin.toLowerCase();
+  });
+  return [...new Set(origins)].slice(0, 20);
+}
+
 export async function listApiKeys(userId: string) {
   const admin = createAdminSupabase();
   const { data, error } = await admin
     .from("future_atlas_api_keys")
-    .select("id,name,key_prefix,created_at,expires_at,revoked_at,last_used_at,permissions")
+    .select("id,name,key_prefix,created_at,expires_at,revoked_at,last_used_at,permissions,allowed_origins")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   if (error) {
@@ -83,7 +99,7 @@ export async function listApiKeys(userId: string) {
   return { keys: ((data || []) as KeyRow[]).map(present), schemaPending: false };
 }
 
-async function insertKey(userId: string, name: string, expiresAt: string | null, replacingId?: string) {
+async function insertKey(userId: string, name: string, expiresAt: string | null, allowedOrigins: string[], replacingId?: string) {
   const admin = createAdminSupabase();
   let active = admin
     .from("future_atlas_api_keys")
@@ -104,8 +120,9 @@ async function insertKey(userId: string, name: string, expiresAt: string | null,
       key_prefix: generated.keyPrefix,
       expires_at: expiresAt,
       permissions: [AI_SCOPE],
+      allowed_origins: allowedOrigins,
     })
-    .select("id,name,key_prefix,created_at,expires_at,permissions")
+    .select("id,name,key_prefix,created_at,expires_at,permissions,allowed_origins")
     .single();
   if (error) throw error;
   return {
@@ -116,11 +133,12 @@ async function insertKey(userId: string, name: string, expiresAt: string | null,
     created_at: data.created_at as string,
     expires_at: (data.expires_at as string | null) ?? null,
     permissions: (data.permissions as string[]) || [AI_SCOPE],
+    allowed_origins: (data.allowed_origins as string[]) || [],
   };
 }
 
-export async function createApiKey(userId: string, name: string, expiresAt: string | null) {
-  return insertKey(userId, name, expiresAt);
+export async function createApiKey(userId: string, name: string, expiresAt: string | null, allowedOrigins: string[]) {
+  return insertKey(userId, name, expiresAt, allowedOrigins);
 }
 
 export async function revokeApiKey(userId: string, keyId: string) {
@@ -137,7 +155,7 @@ export async function revokeApiKey(userId: string, keyId: string) {
   return Boolean(data);
 }
 
-export async function rotateApiKey(userId: string, keyId: string, name: string, expiresAt: string | null) {
+export async function rotateApiKey(userId: string, keyId: string, name: string, expiresAt: string | null, allowedOrigins: string[]) {
   const admin = createAdminSupabase();
   const existing = await admin
     .from("future_atlas_api_keys")
@@ -148,7 +166,7 @@ export async function rotateApiKey(userId: string, keyId: string, name: string, 
     .maybeSingle();
   if (existing.error) throw existing.error;
   if (!existing.data) return null;
-  const created = await insertKey(userId, name, expiresAt, keyId);
+  const created = await insertKey(userId, name, expiresAt, allowedOrigins, keyId);
   await revokeApiKey(userId, keyId);
   return created;
 }

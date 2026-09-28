@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { resolveRequestAuth } from "@/lib/auth/request-auth";
-import { cleanKeyName, createApiKey, listApiKeys, resolveExpiry, revokeApiKey, rotateApiKey, type ExpirationChoice } from "@/lib/platform/api-keys/keys";
+import { cleanAllowedOrigins, cleanKeyName, createApiKey, listApiKeys, resolveExpiry, revokeApiKey, rotateApiKey, type ExpirationChoice } from "@/lib/platform/api-keys/keys";
 import { isMissingTable } from "@/lib/platform/credits/daily";
 import { rateLimited } from "@/lib/security/rate-limit";
 import { withRequestLog } from "@/lib/security/request-log";
@@ -41,15 +41,16 @@ export const POST = withRequestLog(async function POST(request: NextRequest) {
   if (Number(request.headers.get("content-length") || 0) > 4_000) return new NextResponse(null, { status: 413 });
   const session = await sessionUser(request);
   if (!session.ok) return session.response;
-  const body = await request.json().catch(() => null) as { name?: unknown; expiresIn?: unknown; expiresAt?: unknown; rotateId?: unknown } | null;
+  const body = await request.json().catch(() => null) as { name?: unknown; expiresIn?: unknown; expiresAt?: unknown; rotateId?: unknown; allowedOrigins?: unknown } | null;
   if (!body) return NextResponse.json({ error: "A JSON object is required." }, { status: 400 });
   try {
     const name = cleanKeyName(body.name);
     const expiresAt = expiryFromBody(body);
+    const allowedOrigins = cleanAllowedOrigins(body.allowedOrigins);
     const rotateId = typeof body.rotateId === "string" ? body.rotateId.trim() : "";
     const created = rotateId
-      ? await rotateApiKey(session.userId, rotateId, name, expiresAt)
-      : await createApiKey(session.userId, name, expiresAt);
+      ? await rotateApiKey(session.userId, rotateId, name, expiresAt, allowedOrigins)
+      : await createApiKey(session.userId, name, expiresAt, allowedOrigins);
     if (!created) return NextResponse.json({ error: "API key not found." }, { status: 404 });
     return NextResponse.json(created, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -57,7 +58,7 @@ export const POST = withRequestLog(async function POST(request: NextRequest) {
       return NextResponse.json({ error: "API keys are unavailable." }, { status: 503 });
     }
     const message = error instanceof Error ? error.message : "Could not create the API key.";
-    const status = /Name the API key|expiration|future date|Revoke an API key/i.test(message) ? 400 : 503;
+    const status = /Name the API key|expiration|future date|Revoke an API key|origin|HTTPS/i.test(message) ? 400 : 503;
     return NextResponse.json({ error: status === 400 ? message : "Could not create the API key." }, { status });
   }
 });

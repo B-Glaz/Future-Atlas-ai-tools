@@ -659,7 +659,7 @@ async function handleAIRequest(
     const admission = credit;
 
     if (admission.replayStatus === "completed" && admission.replayPayload) {
-      const replay = admission.replayPayload as Record<string, unknown>;
+      const replay = { ...admission.replayPayload, cached: true } as Record<string, unknown>;
       const replayResponse = aiResultResponse(
         streamRequested,
         admission.requestId,
@@ -778,6 +778,9 @@ Repeat supplied scores, budgets, dates, courses, and destinations exactly.
 Never substitute a different value or infer a missing value.
 For time-sensitive requirements, explain what must be checked on the relevant
 official government or university source. Never pretend you performed a live search.
+Do not state exact current visa funds, fees, processing times, deadlines, rankings,
+tuition, work rights, or immigration rules unless the user supplied them. Describe
+the requirement generally and direct the student to the official source instead.
 Do not invent facts.
 If you do not have enough information, say so.
 `,

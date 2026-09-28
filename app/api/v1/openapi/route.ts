@@ -8,8 +8,8 @@ export const GET = withRequestLog(function GET() {
     openapi: "3.1.0",
     info: {
       title: "Future Atlas client API",
-      version: "2026-09-26",
-      description: "Study-abroad AI for FA_AiT_ API keys. Create a key from a signed-in Future Atlas session, then send it as X-API-Key. Website login still uses its own session tokens. A written guide is in docs/client-api.md.",
+      version: "2026-09-28",
+      description: "Study-abroad AI for domain-restricted FA_AiT_ API keys. A written guide is in docs/client-api.md.",
     },
     servers: [{ url: "/" }],
     paths: {
@@ -35,6 +35,7 @@ export const GET = withRequestLog(function GET() {
           security: [{ apiKey: [] }],
           parameters: [
             { in: "header", name: "Idempotency-Key", required: false, schema: { type: "string", minLength: 8, maxLength: 128 }, description: "Send the same key only when retrying the same request." },
+            { in: "header", name: "X-Client-Origin", required: true, schema: { type: "string", format: "uri" }, description: "Exact registered website origin when calling from a server." },
           ],
           requestBody: {
             required: true,
