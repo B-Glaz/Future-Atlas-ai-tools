@@ -5,7 +5,7 @@ import { useAuth } from "@/components/auth/AuthGate";
 import { supabase } from "@/lib/supabase";
 
 export default function CreditCounter() {
-  const { user, requireAuth } = useAuth();
+  const { user, loading: authLoading, requireAuth } = useAuth();
   const [remaining, setRemaining] = useState<number>();
   const [status, setStatus] = useState<"loading" | "ready" | "pending" | "unavailable">("loading");
 
@@ -34,6 +34,7 @@ export default function CreditCounter() {
     return () => window.removeEventListener("future-atlas:credits", update);
   }, [user]);
 
+  if (authLoading) return <span className="whitespace-nowrap text-xs font-medium text-slate-400" aria-busy="true">Checking credits</span>;
   if (!user) return <button type="button" onClick={() => requireAuth()} className="whitespace-nowrap text-xs font-semibold text-slate-500 underline-offset-4 hover:text-slate-900 hover:underline" aria-label="Sign in to view AI credits">Sign in for credits</button>;
   if (status === "pending") return <span className="whitespace-nowrap text-xs font-medium text-amber-600" aria-label="Credits are waiting for database setup">Credits pending</span>;
   if (status === "unavailable") return <span className="whitespace-nowrap text-xs font-medium text-rose-500" aria-label="Credits unavailable">Credits unavailable</span>;

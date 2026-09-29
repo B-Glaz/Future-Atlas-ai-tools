@@ -70,18 +70,23 @@ export default function ApiTokensPanel() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [creating, setCreating] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   const loadKeys = useCallback(async () => {
     const response = await fetch("/api/api-keys", { headers: await sessionHeaders() });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(payload?.error || "Could not load API keys.");
     setKeys(payload.keys || []);
+    setLoaded(true);
   }, []);
 
   useEffect(() => {
     // Initial server state; subsequent refreshes happen after key actions.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadKeys().catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Could not load API keys."));
+    void loadKeys().catch((loadError) => {
+      setLoaded(true);
+      setError(loadError instanceof Error ? loadError.message : "Could not load API keys.");
+    });
   }, [loadKeys]);
 
   async function run(action: string, work: () => Promise<void>) {
@@ -135,7 +140,8 @@ export default function ApiTokensPanel() {
       )}
 
       <section className="grid gap-4">
-        {keys.length === 0 && <p className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-8 text-sm text-slate-500">No API keys yet. Create one to call the API from your server.</p>}
+        {!loaded && <p className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-8 text-sm text-slate-500">Loading API keys…</p>}
+        {loaded && keys.length === 0 && <p className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-8 text-sm text-slate-500">No API keys yet. Create one to call the API from your server.</p>}
         {keys.map((key) => (
           <article key={key.id} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between gap-3">

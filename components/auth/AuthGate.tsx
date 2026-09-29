@@ -125,7 +125,7 @@ export function useAuth() {
 export function ProtectedTool({ children }: { children: ReactNode }) {
   const { user, loading, requireAuth } = useAuth();
   if (loading) return <ToolSkeleton />;
-  if (!user) return <ToolSkeleton onSignIn={() => requireAuth()} />;
+  if (!user) return <SignInPrompt onSignIn={() => requireAuth()} />;
   return <>{children}</>;
 }
 
@@ -244,12 +244,19 @@ function AuthDialog({ onClose, onVerified }: { onClose: () => void; onVerified: 
   );
 }
 
-function ToolSkeleton({ onSignIn }: { onSignIn?: () => void }) {
+function ToolSkeleton() {
   return <div className="mx-auto w-full max-w-5xl p-6 sm:p-10" aria-label="Loading tool">
     <div className="skeleton-sweep h-7 w-48 rounded bg-slate-200" />
     <div className="mt-8 grid gap-4 sm:grid-cols-2">
       {[0, 1, 2, 3].map((item) => <div key={item} className="skeleton-sweep h-28 rounded-lg bg-slate-200" />)}
     </div>
-    {onSignIn && <button type="button" onClick={onSignIn} className="mt-6 rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Sign in to continue</button>}
+  </div>;
+}
+
+function SignInPrompt({ onSignIn }: { onSignIn: () => void }) {
+  return <div className="mx-auto w-full max-w-lg px-6 py-20 text-center">
+    <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Sign in to continue</h1>
+    <p className="mt-3 text-sm leading-6 text-slate-500">Sign in with Google to open this tool and use your daily AI credits.</p>
+    <button type="button" onClick={onSignIn} className="mt-6 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Sign in with Google</button>
   </div>;
 }
