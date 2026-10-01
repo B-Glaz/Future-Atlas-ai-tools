@@ -4,7 +4,7 @@ import { rateLimited } from "@/lib/security/rate-limit";
 
 export const runtime = "nodejs";
 
-const ZOHO_RECORDS_URL = "https://forms.zohopublic.in/onewindow/form/StudyAbroadApplicationForm/formperma/jGJIp30LCf30UXhfAyzC82bep7S1ZSGZNrIfqN28bJ4/records";
+const ZOHO_RECORDS_URL = "https://forms.zohopublic.in/onewindow/form/ContactformSandbox/formperma/DposSeR5C1pG5JWMDYwlAnE2GXvCSG33ZrMj-O-dmdg/records";
 const EDUCATION_LEVELS = new Set(["School", "College", "Undergraduate", "Postgraduate", "Other"]);
 
 type GuidanceBody = {
